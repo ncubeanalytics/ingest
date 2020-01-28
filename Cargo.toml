@@ -1,5 +1,5 @@
 [package]
-name = "ingestion"
+name = "ingest"
 version = "0.1.0"
 authors = ["Robert Ignat <robert.ignat91@gmail.com>"]
 edition = "2018"

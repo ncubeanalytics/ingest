@@ -5,7 +5,7 @@ authors = ["Robert Ignat <robert.ignat91@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2.10", features = ["macros"] }
+tokio = { version = "0.2.11", features = ["macros"] }
 async-tungstenite = { version = "0.3.1", features = ["tokio-runtime"] }
 anyhow = "1.0.26"
 futures = "0.3.1"

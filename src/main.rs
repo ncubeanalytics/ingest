@@ -1,4 +1,4 @@
-use ingestion::server;
+use ingest::server;
 
 #[tokio::main]
 async fn main() {

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use futures::StreamExt;
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Method, Request, Response, StatusCode,
@@ -8,9 +7,9 @@ use tokio::{
     sync::oneshot,
     task::{self, JoinHandle},
 };
-use tungstenite::Message;
 
 mod config;
+mod connection;
 mod ws;
 
 pub use config::*;
@@ -59,7 +58,7 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>> {
             Ok(res) if res.status() != StatusCode::SWITCHING_PROTOCOLS => Ok(res),
 
             Ok(res) => {
-                task::spawn(handle_connection(req));
+                task::spawn(connection::handle(req));
                 Ok(res)
             }
 
@@ -76,27 +75,4 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>> {
             .status(StatusCode::NOT_FOUND)
             .body("Not found".into())?),
     }
-}
-
-async fn handle_connection(req: Request<Body>) {
-    let ws_conn = match ws::upgrade(req).await {
-        Ok(w) => w,
-        Err(e) => {
-            eprintln!("Failed to upgrade connection: {}", e);
-            return;
-        }
-    };
-
-    let (outgoing, incoming) = ws_conn.split();
-
-    incoming
-        .map(|msg| {
-            Ok(Message::text(format!(
-                "ola client. got your {:?} message",
-                msg
-            )))
-        })
-        .forward(outgoing)
-        .await
-        .unwrap();
 }

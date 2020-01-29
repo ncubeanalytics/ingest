@@ -2,9 +2,12 @@ use anyhow::Result;
 use futures::StreamExt;
 use hyper::{
     service::{make_service_fn, service_fn},
-    Body, Method, Request, Response, Server, StatusCode,
+    Body, Method, Request, Response, StatusCode,
 };
-use tokio::task;
+use tokio::{
+    sync::oneshot,
+    task::{self, JoinHandle},
+};
 use tungstenite::Message;
 
 mod config;
@@ -12,14 +15,39 @@ mod ws;
 
 pub use config::*;
 
-pub async fn start(config: Config) -> Result<()> {
-    let service = make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(handler)) });
+pub struct Server {
+    _config: Config,
+    hyper_handle: JoinHandle<hyper::Result<()>>,
+    hyper_close: oneshot::Sender<()>,
+}
 
-    let server = Server::bind(&config.addr).serve(service);
+impl Server {
+    pub fn start(config: Config) -> Result<Self> {
+        let service = make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(handler)) });
 
-    server.await?;
+        let (hyper_close, hyper_close_rx) = oneshot::channel();
 
-    Ok(())
+        let hyper_handle = tokio::spawn(
+            hyper::Server::bind(&config.addr)
+                .serve(service)
+                .with_graceful_shutdown(async {
+                    hyper_close_rx.await.ok();
+                }),
+        );
+
+        println!("Server started and listening on {}", &config.addr);
+
+        Ok(Server {
+            _config: config,
+            hyper_handle,
+            hyper_close,
+        })
+    }
+
+    pub async fn stop(self) {
+        let _ = self.hyper_close.send(());
+        let _ = self.hyper_handle.await;
+    }
 }
 
 async fn handler(req: Request<Body>) -> Result<Response<Body>> {

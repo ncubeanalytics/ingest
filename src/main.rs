@@ -1,8 +1,19 @@
-use ingest::server;
+use anyhow::Result;
+use tokio::signal;
+
+use ingest::server::{Config, Server};
 
 #[tokio::main]
-async fn main() {
-    let config = server::Config::default();
+async fn main() -> Result<()> {
+    let config = Config::default();
 
-    server::start(config).await.expect("Error starting server");
+    let server = Server::start(config).expect("Error starting server");
+
+    signal::ctrl_c().await?;
+
+    println!("\nClosing server");
+
+    server.stop().await;
+
+    Ok(())
 }

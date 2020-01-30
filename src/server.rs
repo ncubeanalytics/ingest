@@ -10,6 +10,7 @@ use tokio::{
 
 mod config;
 mod connection;
+mod kafka;
 mod ws;
 
 pub use config::*;

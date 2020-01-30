@@ -4,9 +4,11 @@ use hyper::{
     Body, Method, Request, Response, StatusCode,
 };
 use tokio::{
-    sync::oneshot,
+    sync::{mpsc, oneshot},
     task::{self, JoinHandle},
 };
+
+use crate::event;
 
 mod config;
 mod connection;
@@ -15,15 +17,37 @@ mod ws;
 
 pub use config::*;
 
+/// Arbitrary channel buffer size.
+const CHAN_BUF: usize = 1024;
+
 pub struct Server {
     _config: Config,
+    kafka_handle: JoinHandle<()>,
+    kafka_close: oneshot::Sender<()>,
     hyper_handle: JoinHandle<hyper::Result<()>>,
     hyper_close: oneshot::Sender<()>,
 }
 
 impl Server {
     pub fn start(config: Config) -> Result<Self> {
-        let service = make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(handler)) });
+        // initialize kafka
+        let producer = kafka::new_producer(&config.kafka)?;
+        let (kafka_close, kafka_close_rx) = oneshot::channel();
+        let (kafka_send, kafka_send_rx) = mpsc::channel(CHAN_BUF);
+
+        let kafka_handle = task::spawn(kafka::start(
+            producer,
+            config.kafka.clone(),
+            kafka_send_rx,
+            kafka_close_rx,
+        ));
+
+        // initialize hyper
+        let service = make_service_fn(move |_| {
+            let k_send = kafka_send.clone();
+
+            async { Ok::<_, hyper::Error>(service_fn(move |req| handler(req, k_send.clone()))) }
+        });
 
         let (hyper_close, hyper_close_rx) = oneshot::channel();
 
@@ -39,20 +63,41 @@ impl Server {
 
         Ok(Server {
             _config: config,
+            kafka_handle,
+            kafka_close,
             hyper_handle,
             hyper_close,
         })
     }
 
     pub async fn stop(self) {
+        let _ = self.kafka_close.send(());
+        let _ = self.kafka_handle.await;
+
         let _ = self.hyper_close.send(());
         let _ = self.hyper_handle.await;
     }
 }
 
-async fn handler(req: Request<Body>) -> Result<Response<Body>> {
+async fn handler(
+    req: Request<Body>,
+    kafka_send: mpsc::Sender<hyper::body::Bytes>,
+) -> Result<Response<Body>> {
     match (req.method(), req.uri().path()) {
-        (&Method::GET, "/http") => Ok(Response::new("we are going to use http".into())),
+        (&Method::GET, "/http") => match event::forward(req, kafka_send).await {
+            Ok(()) => Ok(Response::new(Body::empty())),
+
+            Err(e) if e.is::<&str>() => Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(e.downcast::<&str>().unwrap()))
+                .map_err(|e| e.into()),
+
+            Err(e) => {
+                eprintln!("failed to forward messages to kafka: {}", e);
+
+                internal_server_error()
+            }
+        },
 
         (&Method::GET, "/ws") => match ws::handshake(&req).await {
             // this means that the handshake failed
@@ -66,9 +111,7 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>> {
             Err(e) => {
                 eprintln!("Error accepting websocket connection: {}", e);
 
-                Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::empty())?)
+                internal_server_error()
             }
         },
 
@@ -76,4 +119,10 @@ async fn handler(req: Request<Body>) -> Result<Response<Body>> {
             .status(StatusCode::NOT_FOUND)
             .body("Not found".into())?),
     }
+}
+
+fn internal_server_error() -> Result<Response<Body>> {
+    Ok(Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .body(Body::empty())?)
 }

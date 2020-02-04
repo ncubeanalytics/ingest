@@ -13,8 +13,9 @@ use crate::event;
 
 mod config;
 mod connection;
-mod kafka;
 mod ws;
+
+pub(crate) mod kafka;
 
 pub use config::*;
 

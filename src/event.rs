@@ -1,12 +1,15 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bytes::Bytes;
+use futures::future;
 use hyper::{Body, Request};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
+
+use crate::server::kafka::KafkaEvent;
 
 /// Forwards events from a Request body to a receiver.
 /// Events are JSON objects.
 /// Request body should be an array of events.
-pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) -> Result<()> {
+pub async fn forward(req: Request<Body>, forward_to: mpsc::Sender<KafkaEvent>) -> Result<()> {
     let body = hyper::body::to_bytes(req.into_body()).await?;
 
     // check that body is valid JSON array
@@ -17,6 +20,7 @@ pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) ->
 
     let mut obj_start = 0;
     let mut braces = 0;
+    let mut send_results = Vec::with_capacity(json_data.len());
 
     for i in 0..body.len() {
         match body.get(i) {
@@ -34,16 +38,11 @@ pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) ->
             Some(b'}') => {
                 braces -= 1;
 
-                if braces < 0 {
-                    // input is malformed
-                    return invalid_json_err();
-                }
-
                 if braces == 0 {
                     // this is the end of an object
                     let obj = body.slice(obj_start..=i);
 
-                    forward_to.send(obj).await?;
+                    send_results.push(send_obj(obj, forward_to.clone()).await?);
                 }
             }
 
@@ -52,15 +51,21 @@ pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) ->
         }
     }
 
-    if braces != 0 {
-        // input is malformed but some objects may have been extracted and sent
-        // already
-        return invalid_json_err();
-    }
+    future::try_join_all(send_results).await?;
 
     Ok(())
 }
 
-fn invalid_json_err() -> Result<()> {
-    Err(anyhow!("Invalid JSON"))
+/// Sends the object and returns a receiver for the result.
+async fn send_obj(
+    obj: Bytes,
+    mut send_to: mpsc::Sender<KafkaEvent>,
+) -> Result<oneshot::Receiver<Result<()>>> {
+    let (sender, receiver) = oneshot::channel();
+
+    let event = (obj, sender);
+
+    send_to.send(event).await?;
+
+    Ok(receiver)
 }

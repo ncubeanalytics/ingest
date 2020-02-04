@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use bytes::Bytes;
 use futures::FutureExt;
 use rdkafka::{
@@ -16,6 +17,9 @@ use tokio::{
 
 use super::config::Kafka;
 
+pub type KafkaEvent = (Bytes, oneshot::Sender<Result<()>>);
+pub type KafkaEventChan = mpsc::Receiver<KafkaEvent>;
+
 pub fn new_producer(config: &Kafka) -> KafkaResult<FutureProducer> {
     ClientConfig::new()
         .set("bootstrap.servers", &config.servers)
@@ -27,7 +31,7 @@ pub fn new_producer(config: &Kafka) -> KafkaResult<FutureProducer> {
 pub async fn start(
     producer: FutureProducer,
     config: Kafka,
-    mut events: mpsc::Receiver<Bytes>,
+    mut events: KafkaEventChan,
     mut close: oneshot::Receiver<()>,
 ) {
     let config = Arc::new(config);
@@ -53,19 +57,31 @@ pub async fn start(
     }
 }
 
-async fn handle_event(producer: FutureProducer, event: Bytes, config: Arc<Kafka>) {
+async fn handle_event(producer: FutureProducer, event: KafkaEvent, config: Arc<Kafka>) {
+    let (data, respond_to) = event;
+
     let record = FutureRecord::to(&config.topic)
         .key("")
-        .payload(event.as_ref());
+        .payload(data.as_ref());
 
     producer
-        .send(record, 0)
-        .map(|delivery_status| match delivery_status {
-            Ok(Err((e, _))) => eprintln!("Error sending kafka record: {}", e),
+        .send(record, -1)
+        .map(|delivery_status| {
+            match delivery_status {
+                Ok(Err((e, _))) => respond_to.send(Err(e.into())),
 
-            Err(_) => eprintln!("Kafka internal channel closed!"),
+                Err(e) => respond_to.send(Err(e.into())),
 
-            _ => {}
+                _ => respond_to.send(Ok(())),
+            }
+            .map_err(failed_to_respond)
         })
-        .await;
+        .await
+        .ok();
+}
+
+/// Used when the sender of an event closes the response channel before
+/// receiving a response.
+fn failed_to_respond(_: Result<()>) {
+    eprintln!("Kafka event sender closed without waiting for result.");
 }

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bytes::Bytes;
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Method, Request, Response, StatusCode,
@@ -18,6 +17,8 @@ mod ws;
 pub(crate) mod kafka;
 
 pub use config::*;
+
+use kafka::KafkaEvent;
 
 /// Arbitrary channel buffer size.
 const CHAN_BUF: usize = 1024;
@@ -81,18 +82,24 @@ impl Server {
     }
 }
 
-async fn handler(req: Request<Body>, kafka_send: mpsc::Sender<Bytes>) -> Result<Response<Body>> {
+async fn handler(
+    req: Request<Body>,
+    kafka_send: mpsc::Sender<KafkaEvent>,
+) -> Result<Response<Body>> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/http") => match event::forward(req, kafka_send).await {
             Ok(()) => Ok(Response::new(Body::empty())),
 
-            Err(e) if e.is::<&str>() => Response::builder()
+            Err(e) if e.is::<json::Error>() => Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(e.downcast::<&str>().unwrap()))
+                .body(Body::from(format!(
+                    "Invalid JSON: {}",
+                    e.downcast::<json::Error>().unwrap()
+                )))
                 .map_err(|e| e.into()),
 
             Err(e) => {
-                eprintln!("failed to forward messages to kafka: {}", e);
+                eprintln!("Failed to forward messages to kafka: {}", e);
 
                 internal_server_error()
             }

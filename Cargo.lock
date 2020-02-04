@@ -411,6 +411,7 @@ dependencies = [
  "anyhow",
  "async-tungstenite",
  "base64",
+ "bytes 0.5.4",
  "futures",
  "http 0.2.0",
  "hyper",

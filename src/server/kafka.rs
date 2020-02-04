@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 use futures::FutureExt;
 use rdkafka::{
     error::KafkaResult,
@@ -25,7 +26,7 @@ pub fn new_producer(config: &Kafka) -> KafkaResult<FutureProducer> {
 pub async fn start(
     producer: FutureProducer,
     config: Kafka,
-    mut events: mpsc::Receiver<hyper::body::Bytes>,
+    mut events: mpsc::Receiver<Bytes>,
     mut close: oneshot::Receiver<()>,
 ) {
     let config = Arc::new(config);
@@ -51,7 +52,7 @@ pub async fn start(
     }
 }
 
-async fn handle_event(producer: FutureProducer, event: hyper::body::Bytes, config: Arc<Kafka>) {
+async fn handle_event(producer: FutureProducer, event: Bytes, config: Arc<Kafka>) {
     let record = FutureRecord::to(&config.topic)
         .key("")
         .payload(event.as_ref());

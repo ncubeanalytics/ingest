@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bytes::Bytes;
 use hyper::{
     service::{make_service_fn, service_fn},
     Body, Method, Request, Response, StatusCode,
@@ -79,10 +80,7 @@ impl Server {
     }
 }
 
-async fn handler(
-    req: Request<Body>,
-    kafka_send: mpsc::Sender<hyper::body::Bytes>,
-) -> Result<Response<Body>> {
+async fn handler(req: Request<Body>, kafka_send: mpsc::Sender<Bytes>) -> Result<Response<Body>> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/http") => match event::forward(req, kafka_send).await {
             Ok(()) => Ok(Response::new(Body::empty())),

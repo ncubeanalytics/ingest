@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use hyper::{body::Bytes, Body, Request};
+use bytes::Bytes;
+use hyper::{Body, Request};
 use tokio::sync::mpsc;
 
 /// Forwards events from a Request body to a receiver.

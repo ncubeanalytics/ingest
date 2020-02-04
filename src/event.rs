@@ -9,6 +9,12 @@ use tokio::sync::mpsc;
 pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) -> Result<()> {
     let body = hyper::body::to_bytes(req.into_body()).await?;
 
+    // check that body is valid JSON array
+    let json_data = json::parse(std::str::from_utf8(body.as_ref())?)?;
+    if !json_data.is_array() {
+        return Err(json::Error::wrong_type("array").into());
+    }
+
     let mut obj_start = 0;
     let mut braces = 0;
 

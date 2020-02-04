@@ -10,7 +10,6 @@ pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) ->
     let body = hyper::body::to_bytes(req.into_body()).await?;
 
     let mut obj_start = 0;
-    let mut obj_end: usize;
     let mut braces = 0;
 
     for i in 0..body.len() {
@@ -36,9 +35,7 @@ pub async fn forward(req: Request<Body>, mut forward_to: mpsc::Sender<Bytes>) ->
 
                 if braces == 0 {
                     // this is the end of an object
-                    obj_end = i;
-
-                    let obj = body.slice(obj_start..=obj_end);
+                    let obj = body.slice(obj_start..=i);
 
                     forward_to.send(obj).await?;
                 }

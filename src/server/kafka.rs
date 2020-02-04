@@ -20,6 +20,7 @@ pub fn new_producer(config: &Kafka) -> KafkaResult<FutureProducer> {
     ClientConfig::new()
         .set("bootstrap.servers", &config.servers)
         .set("delivery.timeout.ms", &config.timeout_ms)
+        .set("acks", &config.acks)
         .create()
 }
 

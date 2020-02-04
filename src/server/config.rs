@@ -11,6 +11,7 @@ pub struct Kafka {
     pub servers: String,
     pub topic: String,
     pub timeout_ms: String,
+    pub acks: String,
 }
 
 impl Default for Config {
@@ -28,6 +29,7 @@ impl Default for Kafka {
             servers: "127.0.0.1:9092".to_string(),
             topic: "events".to_string(),
             timeout_ms: "5000".to_string(),
+            acks: "all".to_string(),
         }
     }
 }

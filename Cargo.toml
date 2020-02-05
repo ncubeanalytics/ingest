@@ -5,15 +5,10 @@ authors = ["Robert Ignat <robert.ignat91@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2.11", features = ["macros", "signal"] }
-tokio-tungstenite = "0.10.1"
-anyhow = "1.0.26"
+tokio = { version = "0.2.11", features = ["signal"] }
 futures = "0.3.2"
-tungstenite = "0.10.1"
-hyper = "0.13.2"
-http = "0.2.0"
-base64 = "0.11.0"
-sha-1 = "0.8.2"
 rdkafka = "0.23.1"
 bytes = "0.5.4"
 json = "0.12.1"
+actix-rt = "1.0.0"
+actix-web = "2.0.0"

@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub addr: SocketAddr,
     pub kafka: Kafka,

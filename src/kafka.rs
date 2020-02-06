@@ -2,6 +2,7 @@
 
 use bytes::Bytes;
 use futures::FutureExt;
+use log::{error, trace};
 use rdkafka::{
     error::{KafkaError, KafkaResult},
     producer::{FutureProducer, FutureRecord},
@@ -30,12 +31,16 @@ pub async fn send(producer: &FutureProducer, data: Bytes, config: &Kafka) -> Kaf
             match delivery_status {
                 Err(_) => {
                     // means that something is wrong with the producer
+                    error!("Kafka producer internal channel canceled");
                     Err(KafkaError::Canceled)
                 }
 
                 Ok(Err((e, _))) => Err(e),
 
-                _ => Ok(()),
+                _ => {
+                    trace!("Message successfully send to kafka broker");
+                    Ok(())
+                }
             }
         })
         .await

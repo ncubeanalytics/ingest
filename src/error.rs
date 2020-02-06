@@ -54,7 +54,7 @@ impl ResponseError for Error {
                 JSON(_) | Utf8(_) => self.to_string(),
 
                 e @ Kafka(_) | e @ IO(_) => {
-                    error!("Internal error: {}", internal_error);
+                    error!("Sending 500 response to client; Internal error: {}", e);
 
                     "Internal server error".to_string()
                 }

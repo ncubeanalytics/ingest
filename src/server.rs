@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use actix_web::{dev::Server as ActixServer, web, App, HttpServer};
-use log::info;
+use log::{info, warn};
 use rdkafka::producer::FutureProducer;
 
 use crate::{error::Result, kafka, Config};
@@ -51,6 +51,7 @@ impl Server {
         })
     }
 
+    /// Will gracefully stop the server.
     pub async fn stop(self) {
         info!("Stopping http/ws server");
         // true means gracefully
@@ -58,6 +59,13 @@ impl Server {
 
         info!("Stopping kafka producer");
         kafka::stop_producer(&self.kafka_producer);
+    }
+
+    /// Will ungracefully shut the server down.
+    /// Use `stop` for graceful shutdown.
+    pub async fn kill(self) {
+        warn!("Killing server");
+        self.http_server.stop(false).await;
     }
 
     pub fn addrs(&self) -> &[SocketAddr] {

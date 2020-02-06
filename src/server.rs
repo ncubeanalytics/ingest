@@ -35,7 +35,7 @@ impl Server {
                     kafka_producer,
                     config,
                 })
-                .route("/http", web::get().to(connection::http::handle))
+                .route("/http", web::post().to(connection::http::handle))
                 .route("/ws", web::get().to(connection::ws::handle))
         })
         .disable_signals()

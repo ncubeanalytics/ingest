@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use actix_web::{dev::Server as ActixServer, web, App, HttpServer};
 use log::info;
 use rdkafka::producer::FutureProducer;
@@ -9,6 +11,7 @@ mod connection;
 pub struct Server {
     http_server: ActixServer,
     kafka_producer: FutureProducer,
+    bound_addrs: Vec<SocketAddr>,
 }
 
 pub struct ServerState {
@@ -36,12 +39,15 @@ impl Server {
                 .route("/ws", web::get().to(connection::ws::handle))
         })
         .disable_signals()
-        .bind(&config.addr)?
-        .run();
+        .bind(&config.addr)?;
+
+        // in case we bind to any available port
+        let bound_addrs = http_server.addrs();
 
         Ok(Server {
-            http_server,
+            http_server: http_server.run(),
             kafka_producer,
+            bound_addrs,
         })
     }
 
@@ -52,5 +58,9 @@ impl Server {
 
         info!("Stopping kafka producer");
         kafka::stop_producer(&self.kafka_producer);
+    }
+
+    pub fn addrs(&self) -> &[SocketAddr] {
+        &self.bound_addrs
     }
 }

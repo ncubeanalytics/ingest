@@ -38,7 +38,7 @@ pub async fn send(producer: &FutureProducer, data: Bytes, config: &Kafka) -> Kaf
                 Ok(Err((e, _))) => Err(e),
 
                 _ => {
-                    trace!("Message successfully send to kafka broker");
+                    trace!("Message successfully sent to kafka broker");
                     Ok(())
                 }
             }

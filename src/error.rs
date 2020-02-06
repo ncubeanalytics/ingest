@@ -52,7 +52,8 @@ impl ResponseError for Error {
             .set_header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
             .body(match self {
                 JSON(_) | Utf8(_) => self.to_string(),
-                internal_error => {
+
+                e @ Kafka(_) | e @ IO(_) => {
                     error!("Internal error: {}", internal_error);
 
                     "Internal server error".to_string()
@@ -65,7 +66,7 @@ impl ResponseError for Error {
 
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            Kafka(_) | IO(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

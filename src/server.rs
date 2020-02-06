@@ -34,6 +34,7 @@ impl Server {
                 .route("/http", web::get().to(connection::http::handle))
                 .route("/ws", web::get().to(connection::ws::handle))
         })
+        .disable_signals()
         .bind(&config.addr)?
         .run();
 

@@ -1,4 +1,5 @@
 use actix_web::{dev::Server as ActixServer, web, App, HttpServer};
+use log::info;
 use rdkafka::producer::FutureProducer;
 
 use crate::{error::Result, kafka, Config};
@@ -45,11 +46,11 @@ impl Server {
     }
 
     pub async fn stop(self) {
-        println!("Stopping http/ws server");
+        info!("Stopping http/ws server");
         // true means gracefully
         self.http_server.stop(true).await;
 
-        println!("Stopping kafka producer");
+        info!("Stopping kafka producer");
         kafka::stop_producer(&self.kafka_producer);
     }
 }

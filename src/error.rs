@@ -5,6 +5,7 @@ use actix_web::{
     http::{header, StatusCode},
     HttpResponse,
 };
+use log::error;
 use rdkafka::error::KafkaError;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -52,7 +53,7 @@ impl ResponseError for Error {
             .body(match self {
                 JSON(_) | Utf8(_) => self.to_string(),
                 internal_error => {
-                    eprintln!("Internal error: {}", internal_error);
+                    error!("Internal error: {}", internal_error);
 
                     "Internal server error".to_string()
                 }

@@ -16,7 +16,7 @@ impl EventObjParser {
     pub fn new(buf: Bytes) -> Result<Self> {
         let json_data = json::parse(std::str::from_utf8(buf.as_ref())?)?;
         if !json_data.is_array() {
-            Err(json::Error::wrong_type("array"))?;
+            return Err(json::Error::wrong_type("array").into());
         }
 
         Ok(Self { buf, cursor: 0 })

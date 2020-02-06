@@ -44,12 +44,14 @@ async fn close_signal() -> Result<()> {
     use futures::stream::{select_all, StreamExt};
     use signal::unix::{self, SignalKind};
 
-    Ok(select_all(vec![
+    select_all(vec![
         unix::signal(SignalKind::interrupt())?,
         unix::signal(SignalKind::terminate())?,
         unix::signal(SignalKind::quit())?,
     ])
     .next()
     .await
-    .expect("Got None OS signal!"))
+    .expect("Got None OS signal!");
+
+    Ok(())
 }

@@ -3,6 +3,8 @@ use rdkafka::{error::KafkaResult, producer::FutureProducer};
 
 use crate::{config::Kafka, error::Result, kafka};
 
+mod parser;
+
 /// Parses and forwards events to a kafka producer.
 /// Events are JSON objects.
 /// Data should be an array of events.

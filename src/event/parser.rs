@@ -64,3 +64,104 @@ impl Iterator for EventObjParser {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use json::Error as JSONError;
+
+    use super::*;
+    use crate::error::Error;
+
+    #[test]
+    fn parser_accepts_only_valid_json() {
+        let buf = Bytes::from("this is not valid JSON");
+
+        let res = EventObjParser::new(buf);
+
+        assert!(res.is_err());
+
+        match res.unwrap_err() {
+            Error::JSON(JSONError::UnexpectedCharacter { .. }) => {}
+            _ => panic!("Expected invalid JSON error"),
+        }
+    }
+
+    #[test]
+    fn parser_accepts_only_json_array() {
+        let cases = vec![
+            "null",
+            "true",
+            "32",
+            "32.1",
+            r#""test""#,
+            r#"{"object": 1}"#,
+        ];
+
+        for case in cases {
+            let buf = Bytes::from(case);
+
+            let res = EventObjParser::new(buf);
+
+            assert!(res.is_err());
+
+            match res.unwrap_err() {
+                Error::JSON(JSONError::WrongType(t)) if t == "array" => {}
+                _ => panic!("Expected wrong JSON type error"),
+            }
+        }
+    }
+
+    #[test]
+    fn parser_returns_objects() -> Result<()> {
+        let obj_1 = r#"{"simple": "object"}"#;
+
+        let obj_2 = r#"{
+            "object": "with",
+            "multiple": "fields",
+            "is for testing": true,
+            "int": 1,
+            "float": 1.2
+        }"#;
+
+        let obj_3 = r#"{
+            "object": "with nested objects",
+            "nest": {
+                "another": "nested object",
+                "here": {
+                    "final": "object"
+                }
+            },
+            "and": "an array",
+            "an array": ["some", true, "json values", 43],
+            "plus": "an object array",
+            "objects": [
+                {
+                    "this": "object",
+                    "simple": true
+                },
+                {
+                    "this": "nested object",
+                    "simple": false,
+                    "because": {
+                        "more": {
+                            "objects": "to parse",
+                            "value": 5
+                        }
+                    }
+                }
+            ]
+        }"#;
+
+        let objects = Bytes::from(format!("[{},{},{}]", obj_1, obj_2, obj_3));
+
+        let mut events = EventObjParser::new(objects)?;
+
+        for obj in &[obj_1, obj_2, obj_3] {
+            assert_eq!(events.next(), Some(Bytes::from(*obj)));
+        }
+
+        assert_eq!(events.next(), None);
+
+        Ok(())
+    }
+}

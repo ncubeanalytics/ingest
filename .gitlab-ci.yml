@@ -1,0 +1,36 @@
+image: 'rust:1'
+
+stages:
+    - lint
+    - build
+    - test
+
+variables:
+    CARGO_HOME: $CI_PROJECT_DIR/cargo
+    APT_CACHE_DIR: $CI_PROJECT_DIR/apt
+
+before_script:
+    - apt-get update -yq
+    - apt-get install -o dir::cache::archives="$APT_CACHE_DIR" -y {{ DEPENDENCIES }}
+
+lint:
+    stage: lint
+    script:
+        - cargo fmt -- --check
+        - cargo clippy
+
+build:
+    stage: build
+    script:
+        - cargo build
+
+test:
+    stage: test
+    script:
+        - cargo test
+
+cache:
+    paths:
+        - apt/
+        - cargo/
+        - target/

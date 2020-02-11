@@ -6,6 +6,7 @@ use actix_web::{
     HttpResponse,
 };
 use rdkafka::error::KafkaError;
+use toml::de::Error as TOMLError;
 use tracing::error;
 use tracing_subscriber::filter::ParseError as LogParseError;
 
@@ -18,6 +19,7 @@ pub enum Error {
     Kafka(KafkaError),
     IO(IOError),
     LogFilterParse(LogParseError),
+    TOML(TOMLError),
 }
 
 impl fmt::Display for Error {
@@ -30,6 +32,7 @@ impl fmt::Display for Error {
             Kafka(e) => write!(f, "Kafka producer error: {}", e),
             IO(e) => write!(f, "IO error: {}", e),
             LogFilterParse(e) => write!(f, "Invalid log filter directive: {}", e),
+            TOML(e) => write!(f, "Invalid TOML: {}", e),
         }
     }
 }
@@ -44,6 +47,7 @@ impl StdError for Error {
             Kafka(e) => Some(e),
             IO(e) => Some(e),
             LogFilterParse(e) => Some(e),
+            TOML(e) => Some(e),
         }
     }
 }
@@ -57,7 +61,7 @@ impl ResponseError for Error {
             .body(match self {
                 JSON(_) | Utf8(_) => self.to_string(),
 
-                e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) => {
+                e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) => {
                     error!("Sending 500 response to client; Internal error: {}", e);
 
                     "Internal server error".to_string()
@@ -70,7 +74,7 @@ impl ResponseError for Error {
 
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
-            Kafka(_) | IO(_) | LogFilterParse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Kafka(_) | IO(_) | LogFilterParse(_) | TOML(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -102,5 +106,11 @@ impl From<IOError> for Error {
 impl From<LogParseError> for Error {
     fn from(e: LogParseError) -> Error {
         Error::LogFilterParse(e)
+    }
+}
+
+impl From<TOMLError> for Error {
+    fn from(e: TOMLError) -> Error {
+        Error::TOML(e)
     }
 }

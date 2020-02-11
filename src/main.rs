@@ -1,5 +1,6 @@
+use futures::FutureExt;
 use tokio::signal;
-use tracing::info;
+use tracing::{debug, info};
 
 use ingest::{error::Result, logging, Config, Server};
 
@@ -36,8 +37,10 @@ async fn close_signal() -> Result<()> {
         unix::signal(SignalKind::quit())?,
     ])
     .next()
-    .await
-    .expect("Got None OS signal!");
+    .map(|_| {
+        debug!("Received close signal");
+    })
+    .await;
 
     Ok(())
 }

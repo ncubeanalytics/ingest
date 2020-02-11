@@ -26,10 +26,15 @@ build:
     script:
         - cargo build
 
-test:
+unit:
     stage: test
     script:
-        - cargo test
+        - cargo test --lib
+
+integration:
+    stage: test
+    script:
+        - cargo test --test server
 
 cache:
     paths:

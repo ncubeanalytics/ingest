@@ -36,6 +36,10 @@ impl Server {
             let config = state_config.clone();
 
             App::new()
+                .data(ServerState {
+                    kafka_producer,
+                    config,
+                })
                 .wrap_fn(|req, srv| {
                     // initialize logging for this request
                     let span = logging::req_span(&req);
@@ -50,10 +54,6 @@ impl Server {
                             res
                         })
                         .instrument(span)
-                })
-                .data(ServerState {
-                    kafka_producer,
-                    config,
                 })
                 .route("/http", web::post().to(connection::http::handle))
                 .route("/ws", web::get().to(connection::ws::handle))

@@ -1,7 +1,7 @@
 use reqwest::{Client, StatusCode};
 use url::Url;
 
-use ingest::{config::Kafka, error::Result, Config, Server};
+use ingest::{error::Result, Config, Server};
 
 const HTTP_PATH: &str = "/http";
 
@@ -84,14 +84,12 @@ async fn http_ok() -> Result<()> {
 }
 
 fn start_server() -> Result<Server> {
-    let config = Config {
-        addr: ([127, 0, 0, 1], 0).into(), // bind to any available port
-        kafka: Kafka {
-            timeout_ms: "1000".to_string(), // don't wait too long
-            ..Kafka::default()
-        },
-        ..Config::default()
-    };
+    let mut config = Config::load()?;
+
+    // bind to any available port
+    config.addr = ([127, 0, 0, 1], 0).into();
+    // don't wait too long
+    config.kafka.timeout_ms = std::cmp::min(config.kafka.timeout_ms, "1000".to_string());
 
     Server::start(config)
 }

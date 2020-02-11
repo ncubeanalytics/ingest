@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "0.2.11", features = ["signal"] }
-futures = "0.3.2"
+futures = "0.3.4"
 rdkafka = "0.23.1"
 bytes = "0.5.4"
 json = "0.12.1"

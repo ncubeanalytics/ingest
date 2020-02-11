@@ -5,8 +5,9 @@ use actix_web::{
     http::{header, StatusCode},
     HttpResponse,
 };
-use log::error;
 use rdkafka::error::KafkaError;
+use tracing::error;
+use tracing_subscriber::filter::ParseError as LogParseError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -16,6 +17,7 @@ pub enum Error {
     Utf8(Utf8Error),
     Kafka(KafkaError),
     IO(IOError),
+    LogFilterParse(LogParseError),
 }
 
 impl fmt::Display for Error {
@@ -27,6 +29,7 @@ impl fmt::Display for Error {
             Utf8(_) => write!(f, "Invalid utf8 content"),
             Kafka(e) => write!(f, "Kafka producer error: {}", e),
             IO(e) => write!(f, "IO error: {}", e),
+            LogFilterParse(e) => write!(f, "Invalid log filter directive: {}", e),
         }
     }
 }
@@ -40,6 +43,7 @@ impl StdError for Error {
             Utf8(e) => Some(e),
             Kafka(e) => Some(e),
             IO(e) => Some(e),
+            LogFilterParse(e) => Some(e),
         }
     }
 }
@@ -53,7 +57,7 @@ impl ResponseError for Error {
             .body(match self {
                 JSON(_) | Utf8(_) => self.to_string(),
 
-                e @ Kafka(_) | e @ IO(_) => {
+                e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) => {
                     error!("Sending 500 response to client; Internal error: {}", e);
 
                     "Internal server error".to_string()
@@ -66,7 +70,7 @@ impl ResponseError for Error {
 
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
-            Kafka(_) | IO(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Kafka(_) | IO(_) | LogFilterParse(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -92,5 +96,11 @@ impl From<KafkaError> for Error {
 impl From<IOError> for Error {
     fn from(e: IOError) -> Error {
         Error::IO(e)
+    }
+}
+
+impl From<LogParseError> for Error {
+    fn from(e: LogParseError) -> Error {
+        Error::LogFilterParse(e)
     }
 }

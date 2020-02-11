@@ -1,10 +1,15 @@
 use std::net::SocketAddr;
 
-use actix_web::{dev::Server as ActixServer, web, App, HttpServer};
-use log::{info, warn};
+use actix_web::{
+    dev::{Server as ActixServer, Service},
+    web, App, HttpServer,
+};
+use futures::FutureExt;
 use rdkafka::producer::FutureProducer;
+use tracing::{debug, info, warn};
+use tracing_futures::Instrument;
 
-use crate::{error::Result, kafka, Config};
+use crate::{error::Result, kafka, logging, Config};
 
 mod connection;
 
@@ -31,6 +36,21 @@ impl Server {
             let config = state_config.clone();
 
             App::new()
+                .wrap_fn(|req, srv| {
+                    // initialize logging for this request
+                    let span = logging::req_span(&req);
+
+                    span.in_scope(|| {
+                        debug!("Received new HTTP request");
+                    });
+
+                    srv.call(req)
+                        .map(|res| {
+                            debug!("Sending back response");
+                            res
+                        })
+                        .instrument(span)
+                })
                 .data(ServerState {
                     kafka_producer,
                     config,

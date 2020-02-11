@@ -26,14 +26,25 @@ build:
     script:
         - cargo build
 
-unit:
-    stage: test
-    script:
-        - cargo test --lib
+test:
 
-integration:
     stage: test
+
+    variables:
+        ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,INTERNAL://localhost:9093'
+        LISTENERS: 'PLAINTEXT://0.0.0.0:9092,INTERNAL://0.0.0.0:9093'
+        SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT'
+        INTER_BROKER: 'INTERNAL'
+        PHAEDRA_INGEST_CONFIG: 'ci_config.toml'
+
+    services:
+        - name: krisgeus/docker-kafka
+          alias: kafka
+
     script:
+        # unit tests
+        - cargo test --lib
+        # integration tests
         - cargo test --test server
 
 cache:

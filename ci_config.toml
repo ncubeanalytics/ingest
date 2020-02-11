@@ -1,0 +1,2 @@
+[kafka]
+topic = "kafka:9092"

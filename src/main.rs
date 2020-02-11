@@ -6,7 +6,7 @@ use ingest::{error::Result, logging, Config, Server};
 
 #[actix_rt::main]
 async fn main() -> Result<()> {
-    let config = Config::default();
+    let config = Config::load()?;
 
     logging::init(&config)?;
 

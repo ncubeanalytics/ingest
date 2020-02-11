@@ -2,13 +2,13 @@
 
 use bytes::Bytes;
 use futures::FutureExt;
-use log::{error, trace};
 use rdkafka::{
     error::{KafkaError, KafkaResult},
     producer::{FutureProducer, FutureRecord},
     util::Timeout,
     ClientConfig,
 };
+use tracing::{error, trace};
 
 use crate::config::Kafka;
 

@@ -90,6 +90,7 @@ fn start_server() -> Result<Server> {
             timeout_ms: "1000".to_string(), // don't wait too long
             ..Kafka::default()
         },
+        ..Config::default()
     };
 
     Server::start(config)

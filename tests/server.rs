@@ -88,8 +88,7 @@ fn start_server() -> Result<Server> {
 
     // bind to any available port
     config.addr = ([127, 0, 0, 1], 0).into();
-    // don't wait too long
-    config.kafka.timeout_ms = std::cmp::min(config.kafka.timeout_ms, "1000".to_string());
+    config.kafka.timeout_ms = "5000".to_string();
 
     Server::start(config)
 }

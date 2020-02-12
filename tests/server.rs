@@ -39,7 +39,7 @@ async fn http_ok() -> Result<()> {
                 "single": "object"
             }
         ]
-            "#,
+        "#,
         r#"
         [
             {

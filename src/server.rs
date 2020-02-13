@@ -5,40 +5,33 @@ use actix_web::{
     web, App, HttpServer,
 };
 use futures::FutureExt;
-use rdkafka::producer::FutureProducer;
 use tracing::{debug, info, warn};
 use tracing_futures::Instrument;
 
-use crate::{error::Result, kafka, logging, Config};
+use crate::{error::Result, kafka::Kafka, logging, Config};
 
 mod connection;
 
 pub struct Server {
     http_server: ActixServer,
-    kafka_producer: FutureProducer,
+    kafka: Kafka,
     bound_addrs: Vec<SocketAddr>,
 }
 
 pub struct ServerState {
-    kafka_producer: FutureProducer,
-    config: Config,
+    kafka: Kafka,
 }
 
 impl Server {
     pub fn start(config: Config) -> Result<Self> {
-        let kafka_producer = kafka::new_producer(&config.kafka)?;
+        let kafka = Kafka::start(config.kafka.clone())?;
 
-        let state_kafka_producer = kafka_producer.clone();
-        let state_config = config.clone();
+        let state_kafka = kafka.clone();
 
         let http_server = HttpServer::new(move || {
-            let kafka_producer = state_kafka_producer.clone();
-            let config = state_config.clone();
-
             App::new()
                 .data(ServerState {
-                    kafka_producer,
-                    config,
+                    kafka: state_kafka.clone(),
                 })
                 .wrap_fn(|req, srv| {
                     // initialize logging for this request
@@ -66,7 +59,7 @@ impl Server {
 
         Ok(Server {
             http_server: http_server.run(),
-            kafka_producer,
+            kafka,
             bound_addrs,
         })
     }
@@ -78,7 +71,7 @@ impl Server {
         self.http_server.stop(true).await;
 
         info!("Stopping kafka producer");
-        kafka::stop_producer(&self.kafka_producer);
+        self.kafka.stop();
     }
 
     /// Will ungracefully shut the server down.

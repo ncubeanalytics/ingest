@@ -66,7 +66,7 @@ impl Server {
 
     /// Will gracefully stop the server.
     pub async fn stop(self) {
-        info!("Stopping http/ws server");
+        info!("Stopping web server");
         // true means gracefully
         self.http_server.stop(true).await;
 

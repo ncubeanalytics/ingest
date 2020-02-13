@@ -1,6 +1,6 @@
 use std::env;
 
-use actix_web::dev::ServiceRequest;
+use actix_web::{dev::ServiceRequest, http::header::HeaderMap};
 use tracing::{trace_span, Span};
 use tracing_subscriber::{filter::LevelFilter, EnvFilter, FmtSubscriber};
 use uuid::Uuid;
@@ -34,14 +34,20 @@ pub fn init(config: &Config) -> Result<()> {
 }
 
 pub fn req_span(req: &ServiceRequest) -> Span {
-    let req_id_header = req.headers().get(REQ_ID_HEADER).map(|h| h.to_str());
+    let id = req_id(req.headers());
+    let path = req.path();
 
-    let request_id = match req_id_header {
+    trace_span!("http_request", %id, %path)
+}
+
+fn req_id(headers: &HeaderMap) -> String {
+    let id_header = headers.get(REQ_ID_HEADER).map(|h| h.to_str());
+
+    match id_header {
         Some(Ok(h)) => h.to_string(),
         _ => Uuid::new_v4().to_string(),
-    };
+    }
+}
 
-    let req_path = req.path();
 
-    trace_span!("http request", %request_id, %req_path)
 }

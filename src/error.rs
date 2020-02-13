@@ -7,7 +7,7 @@ use actix_web::{
 };
 use rdkafka::error::KafkaError;
 use toml::de::Error as TOMLError;
-use tracing::error;
+use tracing::{debug, error};
 use tracing_subscriber::filter::ParseError as LogParseError;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -56,13 +56,25 @@ impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         use Error::*;
 
-        HttpResponse::build(self.status_code())
+        let status_code = self.status_code();
+
+        HttpResponse::build(status_code)
             .set_header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
             .body(match self {
-                JSON(_) | Utf8(_) => self.to_string(),
+                JSON(_) | Utf8(_) => {
+                    debug!(
+                        "Sending {} response to client; Client error: {}",
+                        status_code, self
+                    );
+
+                    self.to_string()
+                }
 
                 e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) => {
-                    error!("Sending 500 response to client; Internal error: {}", e);
+                    error!(
+                        "Sending {} response to client; Internal error: {}",
+                        status_code, e
+                    );
 
                     "Internal server error".to_string()
                 }

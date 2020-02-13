@@ -10,6 +10,8 @@ use toml::de::Error as TOMLError;
 use tracing::{debug, error};
 use tracing_subscriber::filter::ParseError as LogParseError;
 
+use crate::server::WSError;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -87,6 +89,32 @@ impl ResponseError for Error {
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
             Kafka(_) | IO(_) | LogFilterParse(_) | TOML(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl WSError for Error {
+    fn message(&self) -> String {
+        use Error::*;
+
+        match self {
+            e @ JSON(_) | e @ Utf8(_) => {
+                debug!(
+                    "Sending unsuccessful response to client; Client error: {}",
+                    e
+                );
+
+                self.to_string()
+            }
+
+            e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) => {
+                error!(
+                    "Sending unsuccessful response to client; Internal error: {}",
+                    e
+                );
+
+                "Internal server error".to_string()
+            }
         }
     }
 }

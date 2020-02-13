@@ -12,6 +12,8 @@ use crate::{error::Result, kafka::Kafka, logging, Config};
 
 mod connection;
 
+pub use connection::ws::WSError;
+
 pub struct Server {
     http_server: ActixServer,
     kafka: Kafka,

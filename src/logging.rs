@@ -49,5 +49,14 @@ fn req_id(headers: &HeaderMap) -> String {
     }
 }
 
+pub fn ws_span() -> Span {
+    let id = Uuid::new_v4().to_string();
 
+    trace_span!("websocket_connection", %id)
+}
+
+pub fn ws_msg_span() -> Span {
+    let id = Uuid::new_v4().to_string();
+
+    trace_span!("websocket_request", %id)
 }

@@ -1,4 +1,7 @@
-use actix::{fut::wrap_future, Actor, ActorContext, ActorFuture, AsyncContext, StreamHandler};
+use actix::{
+    fut::{wrap_future, WrapFuture},
+    Actor, ActorContext, ActorFuture, Addr, AsyncContext, Handler, StreamHandler,
+};
 use actix_web::{web, HttpRequest, Responder};
 use actix_web_actors::ws;
 use bytes::Bytes;
@@ -55,7 +58,7 @@ impl WSHandler {
     fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes, log_span: Span) {
         let fut = forward_to_kafka(events, self.kafka.clone()).instrument(log_span.clone());
 
-        let actor_fut = wrap_future(fut).map(move |result, _: &mut Self, ctx| {
+        let actor_fut = fut.into_actor(self).map(move |result, _, ctx| {
             let _span_guard = log_span.enter();
 
             Self::send_response(ctx, result);

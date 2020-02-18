@@ -5,12 +5,16 @@ use bytes::Bytes;
 use tracing::{error, trace, warn, Span};
 use tracing_futures::Instrument;
 
+use crate::error::Error;
 use crate::event::forward_to_kafka;
 use crate::kafka::Kafka;
 use crate::logging;
 use crate::server::ServerState;
 
+mod close;
 mod error;
+
+pub use close::WSClose;
 pub use error::WSError;
 
 pub async fn handle(
@@ -22,17 +26,30 @@ pub async fn handle(
 
     log_span.in_scope(|| trace!("Upgrading connection to WebSocket"));
 
-    ws::start(WSHandler::new(state.kafka.clone(), log_span), &req, stream)
+    if state.accepting_ws() {
+        ws::start(
+            WSHandler::new(state.kafka.clone(), state, log_span),
+            &req,
+            stream,
+        )
+    } else {
+        Err(Error::WSNotAccepted.into())
+    }
 }
 
-struct WSHandler {
+pub struct WSHandler {
     log_span: Span,
     kafka: Kafka,
+    server_state: web::Data<ServerState>,
 }
 
 impl WSHandler {
-    fn new(kafka: Kafka, log_span: Span) -> Self {
-        Self { kafka, log_span }
+    fn new(kafka: Kafka, server_state: web::Data<ServerState>, log_span: Span) -> Self {
+        Self {
+            kafka,
+            server_state,
+            log_span,
+        }
     }
 
     fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes, log_span: Span) {
@@ -108,6 +125,20 @@ type WSMessage = Result<ws::Message, ws::ProtocolError>;
 
 impl Actor for WSHandler {
     type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let fut = state_register(self.server_state.clone(), ctx.address())
+            .instrument(self.log_span.clone());
+
+        ctx.wait(wrap_future(fut));
+    }
+
+    fn stopped(&mut self, ctx: &mut Self::Context) {
+        let fut = state_unregister(self.server_state.clone(), ctx.address())
+            .instrument(self.log_span.clone());
+
+        ctx.wait(wrap_future(fut));
+    }
 }
 
 impl StreamHandler<WSMessage> for WSHandler {
@@ -137,4 +168,31 @@ impl StreamHandler<WSMessage> for WSHandler {
             _ => unimplemented!(),
         };
     }
+}
+
+impl Handler<WSClose> for WSHandler {
+    type Result = ();
+
+    fn handle(&mut self, _msg: WSClose, ctx: &mut Self::Context) {
+        let _log_guard = self.log_span.enter();
+
+        trace!("Received internal close message");
+
+        let reason = ws::CloseReason {
+            code: ws::CloseCode::Restart,
+            description: None,
+        };
+
+        ctx.close(Some(reason));
+
+        ctx.stop();
+    }
+}
+
+async fn state_register(state: web::Data<ServerState>, addr: Addr<WSHandler>) {
+    state.register_ws(addr).await
+}
+
+async fn state_unregister(state: web::Data<ServerState>, addr: Addr<WSHandler>) {
+    state.unregister_ws(&addr).await
 }

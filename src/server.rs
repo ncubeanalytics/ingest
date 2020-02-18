@@ -11,30 +11,31 @@ use tracing_futures::Instrument;
 use crate::{error::Result, kafka::Kafka, logging, Config};
 
 mod connection;
+mod state;
 
 pub use connection::ws::WSError;
+
+use state::ServerState;
 
 pub struct Server {
     http_server: ActixServer,
     kafka: Kafka,
+    state: web::Data<ServerState>,
     bound_addrs: Vec<SocketAddr>,
-}
-
-pub struct ServerState {
-    kafka: Kafka,
 }
 
 impl Server {
     pub fn start(config: Config) -> Result<Self> {
         let kafka = Kafka::start(config.kafka.clone())?;
 
-        let state_kafka = kafka.clone();
+        let state = web::Data::new(ServerState::new(kafka.clone()));
+        let app_state = state.clone();
 
         let http_server = HttpServer::new(move || {
+            let state = app_state.clone();
+
             App::new()
-                .data(ServerState {
-                    kafka: state_kafka.clone(),
-                })
+                .app_data(state)
                 .wrap_fn(|req, srv| {
                     // initialize logging for this request
                     let span = logging::req_span(&req);
@@ -63,11 +64,15 @@ impl Server {
             http_server: http_server.run(),
             kafka,
             bound_addrs,
+            state,
         })
     }
 
     /// Will gracefully stop the server.
     pub async fn stop(self) {
+        debug!("Closing all WebSocket connections");
+        self.state.close_all_ws().await;
+
         info!("Stopping web server");
         // true means gracefully
         self.http_server.stop(true).await;

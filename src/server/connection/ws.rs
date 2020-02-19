@@ -199,7 +199,11 @@ impl StreamHandler<WSMessage> for WSHandler {
                 ctx.pong(b"pong");
             }
 
-            Ok(Close(reason)) => self.handle_client_close(reason, ctx, ws_msg_span),
+            Ok(Pong(_)) => {}
+
+            Ok(Close(reason)) => {
+                self.handle_client_close(reason, ctx, ws_msg_span);
+            }
 
             _ => unimplemented!(),
         };

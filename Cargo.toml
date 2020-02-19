@@ -27,3 +27,4 @@ features = ["signal", "sync"]
 [dev-dependencies]
 url = "2.1.1"
 reqwest = "0.10.1"
+tokio-tungstenite = "0.10.1"

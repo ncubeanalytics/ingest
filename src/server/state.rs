@@ -6,6 +6,7 @@ use futures::future::{join_all, FutureExt};
 use tokio::sync::RwLock;
 use tracing::{error, trace};
 
+use crate::error::{Error, Result};
 use crate::kafka::Kafka;
 
 use super::connection::ws::{WSClose, WSHandler};
@@ -27,14 +28,20 @@ impl ServerState {
         }
     }
 
-    pub async fn register_ws(&self, ws_addr: Addr<WSHandler>) {
+    pub async fn register_ws(&self, ws_addr: Addr<WSHandler>) -> Result<()> {
+        if !self.accepting_ws() {
+            return Err(Error::WSNotAccepted);
+        }
+
         let mut ws_connections = self.ws_connections.write().await;
 
         if !ws_connections.insert(ws_addr) {
             error!("Tried to register same webscket actor twice");
         } else {
-            trace!("Registered new websocket connection")
+            trace!("Registered new websocket connection");
         }
+
+        Ok(())
     }
 
     pub async fn unregister_ws(&self, ws_addr: &Addr<WSHandler>) {

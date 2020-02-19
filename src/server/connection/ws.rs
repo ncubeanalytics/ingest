@@ -1,6 +1,6 @@
 use actix::{
-    fut::{wrap_future, WrapFuture},
-    Actor, ActorContext, ActorFuture, Addr, AsyncContext, Handler, StreamHandler,
+    fut::WrapFuture, Actor, ActorContext, ActorFuture, Arbiter, AsyncContext, Handler,
+    StreamHandler,
 };
 use actix_web::{web, HttpRequest, Responder};
 use actix_web_actors::ws;
@@ -97,6 +97,7 @@ impl WSHandler {
     }
 
     fn handle_client_close(
+        &self,
         reason: Option<ws::CloseReason>,
         ctx: &mut <Self as Actor>::Context,
         log_span: Span,
@@ -120,7 +121,49 @@ impl WSHandler {
             trace!("Connection closed by client. No reason provided");
         }
 
-        ctx.stop()
+        self.state_unregister(ctx);
+
+        ctx.stop();
+    }
+
+    fn state_register(&self, ctx: &mut <Self as Actor>::Context) {
+        let state = self.server_state.clone();
+        let addr = ctx.address();
+        let fut = async move { state.register_ws(addr).await }
+            .instrument(self.log_span.clone())
+            .into_actor(self)
+            .map(|result, handler, ctx| {
+                let _span_guard = handler.log_span.enter();
+
+                // if client managed to connect while server is shutting down
+                // close connection immediately
+                if let Err(Error::WSNotAccepted) = result {
+                    warn!("Connection opened while server was shutting down. Closing it");
+                    Self::internal_close(ctx);
+                }
+            });
+
+        ctx.wait(fut);
+    }
+
+    fn state_unregister(&self, ctx: &mut <Self as Actor>::Context) {
+        let state = self.server_state.clone();
+        let addr = ctx.address();
+
+        let fut = async move { state.unregister_ws(&addr).await }.instrument(self.log_span.clone());
+
+        Arbiter::spawn(fut);
+    }
+
+    fn internal_close(ctx: &mut <Self as Actor>::Context) {
+        let reason = ws::CloseReason {
+            code: ws::CloseCode::Restart,
+            description: None,
+        };
+
+        ctx.close(Some(reason));
+
+        ctx.stop();
     }
 }
 
@@ -130,17 +173,7 @@ impl Actor for WSHandler {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let fut = state_register(self.server_state.clone(), ctx.address())
-            .instrument(self.log_span.clone());
-
-        ctx.wait(wrap_future(fut));
-    }
-
-    fn stopped(&mut self, ctx: &mut Self::Context) {
-        let fut = state_unregister(self.server_state.clone(), ctx.address())
-            .instrument(self.log_span.clone());
-
-        ctx.wait(wrap_future(fut));
+        self.state_register(ctx);
     }
 }
 
@@ -166,7 +199,7 @@ impl StreamHandler<WSMessage> for WSHandler {
                 ctx.pong(b"pong");
             }
 
-            Ok(Close(reason)) => Self::handle_client_close(reason, ctx, ws_msg_span),
+            Ok(Close(reason)) => self.handle_client_close(reason, ctx, ws_msg_span),
 
             _ => unimplemented!(),
         };
@@ -181,21 +214,6 @@ impl Handler<WSClose> for WSHandler {
 
         trace!("Received internal close message");
 
-        let reason = ws::CloseReason {
-            code: ws::CloseCode::Restart,
-            description: None,
-        };
-
-        ctx.close(Some(reason));
-
-        ctx.stop();
+        Self::internal_close(ctx);
     }
-}
-
-async fn state_register(state: web::Data<ServerState>, addr: Addr<WSHandler>) {
-    state.register_ws(addr).await
-}
-
-async fn state_unregister(state: web::Data<ServerState>, addr: Addr<WSHandler>) {
-    state.unregister_ws(&addr).await
 }

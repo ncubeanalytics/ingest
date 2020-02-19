@@ -61,11 +61,12 @@ async fn http_bad_request() -> IResult<()> {
     let client = Client::new();
 
     for case in INVALID_DATA {
-        let res = client.post(http_path(&server)).body(*case).send().await;
-
-        assert!(res.is_ok());
-
-        let res = res.unwrap();
+        let res = client
+            .post(http_path(&server))
+            .body(*case)
+            .send()
+            .await
+            .expect("failed to send bad http request to server");
 
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
@@ -81,11 +82,12 @@ async fn http_ok() -> IResult<()> {
     let client = Client::new();
 
     for case in VALID_DATA {
-        let res = client.post(http_path(&server)).body(*case).send().await;
-
-        assert!(res.is_ok());
-
-        let res = res.unwrap();
+        let res = client
+            .post(http_path(&server))
+            .body(*case)
+            .send()
+            .await
+            .expect("failed to send good http request to server");
 
         assert_eq!(res.status(), StatusCode::OK);
     }

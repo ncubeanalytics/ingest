@@ -6,5 +6,6 @@ COPY . .
 RUN cargo install --target x86_64-unknown-linux-musl --path .
 
 FROM scratch
+EXPOSE 8088/tcp
 COPY --from=build /usr/local/cargo/bin/ingest /usr/local/bin/ingest
 CMD ["ingest"]

@@ -205,6 +205,11 @@ impl StreamHandler<WSMessage> for WSHandler {
                 self.handle_client_close(reason, ctx, ws_msg_span);
             }
 
+            Err(e) => {
+                warn!("Closing. Protocol error: {}", e);
+                ctx.stop();
+            }
+
             _ => unimplemented!(),
         };
     }

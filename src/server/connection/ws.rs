@@ -121,9 +121,7 @@ impl WSHandler {
             trace!("Connection closed by client. No reason provided");
         }
 
-        self.state_unregister(ctx);
-
-        ctx.stop();
+        self.stop(ctx);
     }
 
     fn state_register(&self, ctx: &mut <Self as Actor>::Context) {
@@ -162,6 +160,13 @@ impl WSHandler {
         };
 
         ctx.close(Some(reason));
+
+        ctx.stop();
+    }
+
+    /// Use to unregister websocket actor from app state and stop it.
+    fn stop(&self, ctx: &mut <Self as Actor>::Context) {
+        self.state_unregister(ctx);
 
         ctx.stop();
     }
@@ -207,7 +212,7 @@ impl StreamHandler<WSMessage> for WSHandler {
 
             Err(e) => {
                 warn!("Closing. Protocol error: {}", e);
-                ctx.stop();
+                self.stop(ctx);
             }
 
             _ => unimplemented!(),

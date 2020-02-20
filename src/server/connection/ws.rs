@@ -52,14 +52,16 @@ impl WSHandler {
             kafka,
             server_state,
             log_span,
+            fragment_buf: None,
         }
     }
 
-    fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes, log_span: Span) {
-        let fut = forward_to_kafka(events, self.kafka.clone()).instrument(log_span.clone());
+    fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes) {
+        let fut = forward_to_kafka(events, self.kafka.clone()).in_current_span();
 
+        let span = Span::current();
         let actor_fut = fut.into_actor(self).map(move |result, _, ctx| {
-            let _span_guard = log_span.enter();
+            let _span_guard = span.enter();
 
             Self::send_response(ctx, result);
         });
@@ -100,11 +102,8 @@ impl WSHandler {
         &self,
         reason: Option<ws::CloseReason>,
         ctx: &mut <Self as Actor>::Context,
-        log_span: Span,
     ) {
         use ws::CloseCode::Normal;
-
-        let _log_guard = log_span.enter();
 
         if let Some(reason) = reason {
             match reason.code {
@@ -148,7 +147,7 @@ impl WSHandler {
         let state = self.server_state.clone();
         let addr = ctx.address();
 
-        let fut = async move { state.unregister_ws(&addr).await }.instrument(self.log_span.clone());
+        let fut = async move { state.unregister_ws(&addr).await }.in_current_span();
 
         Arbiter::spawn(fut);
     }
@@ -186,18 +185,18 @@ impl StreamHandler<WSMessage> for WSHandler {
     fn handle(&mut self, msg: WSMessage, ctx: &mut Self::Context) {
         use ws::Message::*;
 
-        let _ws_span_guard = self.log_span.enter();
-        let ws_msg_span = logging::ws_msg_span();
+        let ws_msg_span = logging::ws_msg_span(&self.log_span);
+        let _span_guard = ws_msg_span.enter();
 
-        ws_msg_span.in_scope(|| trace!("Got new message"));
+        trace!("Got new message");
 
         match msg {
             Ok(Binary(buf)) => {
-                self.handle_events(ctx, buf, ws_msg_span);
+                self.handle_events(ctx, buf);
             }
 
             Ok(Text(buf)) => {
-                self.handle_events(ctx, buf.into(), ws_msg_span);
+                self.handle_events(ctx, buf.into());
             }
 
             Ok(Ping(data)) => {
@@ -207,11 +206,12 @@ impl StreamHandler<WSMessage> for WSHandler {
             Ok(Pong(_)) => {}
 
             Ok(Close(reason)) => {
-                self.handle_client_close(reason, ctx, ws_msg_span);
+                self.handle_client_close(reason, ctx);
             }
 
             Err(e) => {
                 warn!("Closing. Protocol error: {}", e);
+
                 self.stop(ctx);
             }
 
@@ -226,7 +226,7 @@ impl Handler<WSClose> for WSHandler {
     fn handle(&mut self, _msg: WSClose, ctx: &mut Self::Context) {
         let _log_guard = self.log_span.enter();
 
-        trace!("Received internal close message");
+        trace!("Received internal close message. Closing connection");
 
         Self::internal_close(ctx);
     }

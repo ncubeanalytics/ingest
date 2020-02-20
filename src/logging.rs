@@ -55,8 +55,8 @@ pub fn ws_span() -> Span {
     trace_span!("websocket_connection", %id)
 }
 
-pub fn ws_msg_span() -> Span {
+pub fn ws_msg_span(parent: &Span) -> Span {
     let id = Uuid::new_v4().to_string();
 
-    trace_span!("websocket_request", %id)
+    trace_span!(parent: parent, "websocket_request", %id)
 }

@@ -20,9 +20,7 @@ pub fn init(config: &Config) -> Result<()> {
         filter = filter.add_directive(s.parse()?);
     }
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(LevelFilter::INFO)
-        .with_env_filter(filter);
+    let subscriber = FmtSubscriber::builder().with_env_filter(filter);
 
     if config.log_json {
         subscriber.json().init();

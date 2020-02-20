@@ -200,8 +200,8 @@ impl StreamHandler<WSMessage> for WSHandler {
                 self.handle_events(ctx, buf.into(), ws_msg_span);
             }
 
-            Ok(Ping(_)) => {
-                ctx.pong(b"pong");
+            Ok(Ping(data)) => {
+                ctx.pong(&data);
             }
 
             Ok(Pong(_)) => {}

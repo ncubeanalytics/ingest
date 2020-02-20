@@ -273,13 +273,15 @@ impl StreamHandler<WSMessage> for WSHandler {
                 self.handle_continuation(ctx, fragment);
             }
 
+            Ok(Nop) => {
+                error!("Received Nop message. Doing nothing");
+            }
+
             Err(e) => {
                 warn!("Closing. Protocol error: {}", e);
 
                 self.stop(ctx);
             }
-
-            _ => unimplemented!(),
         };
     }
 }

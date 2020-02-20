@@ -7,8 +7,10 @@ use actix_web::{
 };
 use rdkafka::error::KafkaError;
 use toml::de::Error as TOMLError;
-use tracing::error;
+use tracing::{debug, error};
 use tracing_subscriber::filter::ParseError as LogParseError;
+
+use crate::server::WSError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -20,6 +22,10 @@ pub enum Error {
     IO(IOError),
     LogFilterParse(LogParseError),
     TOML(TOMLError),
+
+    /// Used when server is shutting down and no more websocket connections
+    /// are accepted.
+    WSNotAccepted,
 }
 
 impl fmt::Display for Error {
@@ -33,6 +39,11 @@ impl fmt::Display for Error {
             IO(e) => write!(f, "IO error: {}", e),
             LogFilterParse(e) => write!(f, "Invalid log filter directive: {}", e),
             TOML(e) => write!(f, "Invalid TOML: {}", e),
+
+            WSNotAccepted => write!(
+                f,
+                "Server shutting down. No more WebSocket connections accepted"
+            ),
         }
     }
 }
@@ -48,6 +59,8 @@ impl StdError for Error {
             IO(e) => Some(e),
             LogFilterParse(e) => Some(e),
             TOML(e) => Some(e),
+
+            WSNotAccepted => None,
         }
     }
 }
@@ -56,13 +69,25 @@ impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         use Error::*;
 
-        HttpResponse::build(self.status_code())
+        let status_code = self.status_code();
+
+        HttpResponse::build(status_code)
             .set_header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
             .body(match self {
-                JSON(_) | Utf8(_) => self.to_string(),
+                JSON(_) | Utf8(_) | WSNotAccepted => {
+                    debug!(
+                        "Sending {} response to client; Client error: {}",
+                        status_code, self
+                    );
+
+                    self.to_string()
+                }
 
                 e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) => {
-                    error!("Sending 500 response to client; Internal error: {}", e);
+                    error!(
+                        "Sending {} response to client; Internal error: {}",
+                        status_code, e
+                    );
 
                     "Internal server error".to_string()
                 }
@@ -75,6 +100,34 @@ impl ResponseError for Error {
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
             Kafka(_) | IO(_) | LogFilterParse(_) | TOML(_) => StatusCode::INTERNAL_SERVER_ERROR,
+
+            WSNotAccepted => StatusCode::CONFLICT,
+        }
+    }
+}
+
+impl WSError for Error {
+    fn message(&self) -> String {
+        use Error::*;
+
+        match self {
+            e @ JSON(_) | e @ Utf8(_) => {
+                debug!(
+                    "Sending unsuccessful response to client; Client error: {}",
+                    e
+                );
+
+                self.to_string()
+            }
+
+            e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) | e @ WSNotAccepted => {
+                error!(
+                    "Sending unsuccessful response to client; Internal error: {}",
+                    e
+                );
+
+                "Internal server error".to_string()
+            }
         }
     }
 }

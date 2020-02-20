@@ -5,41 +5,37 @@ use actix_web::{
     web, App, HttpServer,
 };
 use futures::FutureExt;
-use rdkafka::producer::FutureProducer;
 use tracing::{debug, info, warn};
 use tracing_futures::Instrument;
 
-use crate::{error::Result, kafka, logging, Config};
+use crate::{error::Result, kafka::Kafka, logging, Config};
 
 mod connection;
+mod state;
+
+pub use connection::ws::WSError;
+
+use state::ServerState;
 
 pub struct Server {
     http_server: ActixServer,
-    kafka_producer: FutureProducer,
+    kafka: Kafka,
+    state: web::Data<ServerState>,
     bound_addrs: Vec<SocketAddr>,
-}
-
-pub struct ServerState {
-    kafka_producer: FutureProducer,
-    config: Config,
 }
 
 impl Server {
     pub fn start(config: Config) -> Result<Self> {
-        let kafka_producer = kafka::new_producer(&config.kafka)?;
+        let kafka = Kafka::start(config.kafka.clone())?;
 
-        let state_kafka_producer = kafka_producer.clone();
-        let state_config = config.clone();
+        let state = web::Data::new(ServerState::new(kafka.clone()));
+        let app_state = state.clone();
 
         let http_server = HttpServer::new(move || {
-            let kafka_producer = state_kafka_producer.clone();
-            let config = state_config.clone();
+            let state = app_state.clone();
 
             App::new()
-                .data(ServerState {
-                    kafka_producer,
-                    config,
-                })
+                .app_data(state)
                 .wrap_fn(|req, srv| {
                     // initialize logging for this request
                     let span = logging::req_span(&req);
@@ -66,19 +62,23 @@ impl Server {
 
         Ok(Server {
             http_server: http_server.run(),
-            kafka_producer,
+            kafka,
             bound_addrs,
+            state,
         })
     }
 
     /// Will gracefully stop the server.
     pub async fn stop(self) {
-        info!("Stopping http/ws server");
+        debug!("Closing all WebSocket connections");
+        self.state.close_all_ws().await;
+
+        info!("Stopping web server");
         // true means gracefully
         self.http_server.stop(true).await;
 
         info!("Stopping kafka producer");
-        kafka::stop_producer(&self.kafka_producer);
+        self.kafka.stop();
     }
 
     /// Will ungracefully shut the server down.

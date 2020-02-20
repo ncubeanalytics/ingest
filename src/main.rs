@@ -1,4 +1,3 @@
-use futures::FutureExt;
 use tokio::signal;
 use tracing::{debug, info};
 
@@ -14,6 +13,7 @@ async fn main() -> Result<()> {
     info!("Server started");
 
     close_signal().await?;
+    debug!("Received close signal");
 
     info!("Server shutting down...");
     server.stop().await;
@@ -37,9 +37,6 @@ async fn close_signal() -> Result<()> {
         unix::signal(SignalKind::quit())?,
     ])
     .next()
-    .map(|_| {
-        debug!("Received close signal");
-    })
     .await;
 
     Ok(())

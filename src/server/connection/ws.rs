@@ -2,9 +2,10 @@ use actix::{
     fut::WrapFuture, Actor, ActorContext, ActorFuture, Arbiter, AsyncContext, Handler,
     StreamHandler,
 };
+use actix_http::ws::Item;
 use actix_web::{web, HttpRequest, Responder};
 use actix_web_actors::ws;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use tracing::{error, trace, warn, Span};
 use tracing_futures::Instrument;
 
@@ -44,6 +45,8 @@ pub struct WSHandler {
     log_span: Span,
     kafka: Kafka,
     server_state: web::Data<ServerState>,
+    /// Used for continuation messages
+    fragment_buf: Option<BytesMut>,
 }
 
 impl WSHandler {
@@ -67,6 +70,46 @@ impl WSHandler {
         });
 
         ctx.spawn(actor_fut);
+    }
+
+    fn handle_continuation(&mut self, ctx: &mut <Self as Actor>::Context, fragment: Item) {
+        match fragment {
+            Item::FirstText(b) | Item::FirstBinary(b) => {
+                if self.fragment_buf.is_none() {
+                    let buf = BytesMut::from(b.as_ref());
+
+                    self.fragment_buf = Some(buf);
+                } else {
+                    self.protocol_error_close(ctx, "Client sent first continuation fragment twice");
+                }
+            }
+
+            Item::Continue(b) => {
+                if let Some(buf) = self.fragment_buf.as_mut() {
+                    buf.extend_from_slice(b.as_ref());
+                } else {
+                    self.protocol_error_close(
+                        ctx,
+                        "Client sent continue fragment without starting continuation",
+                    )
+                }
+            }
+
+            Item::Last(b) => {
+                let opt_buf = self.fragment_buf.take();
+
+                if let Some(mut buf) = opt_buf {
+                    buf.extend_from_slice(b.as_ref());
+
+                    self.handle_events(ctx, buf.into());
+                } else {
+                    self.protocol_error_close(
+                        ctx,
+                        "Client sent last fragment without starting continuation",
+                    )
+                }
+            }
+        }
     }
 
     fn send_response<E>(ctx: &mut <Self as Actor>::Context, result: Result<(), E>)
@@ -163,6 +206,23 @@ impl WSHandler {
         ctx.stop();
     }
 
+    /// Used when actix didn't catch protocol errors for some reason
+    fn protocol_error_close(&self, ctx: &mut <Self as Actor>::Context, desc: &str) {
+        error!(
+            "Protocol error not handled by actix! {}; Closing connection",
+            desc
+        );
+
+        let reason = ws::CloseReason {
+            code: ws::CloseCode::Protocol,
+            description: None,
+        };
+
+        ctx.close(Some(reason));
+
+        self.stop(ctx);
+    }
+
     /// Use to unregister websocket actor from app state and stop it.
     fn stop(&self, ctx: &mut <Self as Actor>::Context) {
         self.state_unregister(ctx);
@@ -207,6 +267,10 @@ impl StreamHandler<WSMessage> for WSHandler {
 
             Ok(Close(reason)) => {
                 self.handle_client_close(reason, ctx);
+            }
+
+            Ok(Continuation(fragment)) => {
+                self.handle_continuation(ctx, fragment);
             }
 
             Err(e) => {

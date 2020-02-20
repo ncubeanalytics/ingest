@@ -1,7 +1,7 @@
 use std::env;
 
 use actix_web::{dev::ServiceRequest, http::header::HeaderMap};
-use tracing::{trace_span, Span};
+use tracing::{error_span, Span};
 use tracing_subscriber::{filter::LevelFilter, EnvFilter, FmtSubscriber};
 use uuid::Uuid;
 
@@ -35,7 +35,7 @@ pub fn req_span(req: &ServiceRequest) -> Span {
     let id = req_id(req.headers());
     let path = req.path();
 
-    trace_span!("http_request", %id, %path)
+    error_span!("http_request", %id, %path)
 }
 
 fn req_id(headers: &HeaderMap) -> String {
@@ -50,11 +50,11 @@ fn req_id(headers: &HeaderMap) -> String {
 pub fn ws_span() -> Span {
     let id = Uuid::new_v4().to_string();
 
-    trace_span!("websocket_connection", %id)
+    error_span!("websocket_connection", %id)
 }
 
 pub fn ws_msg_span(parent: &Span) -> Span {
     let id = Uuid::new_v4().to_string();
 
-    trace_span!(parent: parent, "websocket_request", %id)
+    error_span!(parent: parent, "websocket_request", %id)
 }

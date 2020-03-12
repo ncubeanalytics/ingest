@@ -13,6 +13,9 @@ before_script:
     - apt-get update -yq
     - apt-get install -o dir::cache::archives="$APT_CACHE_DIR" -y
 
+    # ust gitlab CI token to fetch private gitlab dependencies
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
+
 lint:
     stage: lint
     script:

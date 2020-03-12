@@ -1,6 +1,8 @@
 use tokio::signal;
 use tracing::{debug, info};
 
+use common::config::CommonConfig;
+
 use ingest::{error::Result, logging, Config, Server};
 
 #[actix_rt::main]

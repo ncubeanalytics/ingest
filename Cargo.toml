@@ -25,6 +25,9 @@ toml = "0.5.6"
 version = "0.2.13"
 features = ["signal", "sync"]
 
+[dependencies.common]
+git = "ssh://git@gitlab.com/phaedra-analytics/common.git"
+
 [dev-dependencies]
 url = "2.1.1"
 reqwest = "0.10.4"

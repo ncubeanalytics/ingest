@@ -1,14 +1,8 @@
-use std::env;
-use std::fs::File;
-use std::io::Read;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::Result;
-
-const ENV_CONFIG: &str = "PHAEDRA_INGEST_CONFIG";
+use common::config::CommonConfig;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
@@ -27,32 +21,8 @@ pub struct Kafka {
     pub acks: String,
 }
 
-impl Config {
-    /// Looks for a TOML config file at a path defined by the
-    /// PHAEDRA_INGEST_CONFIG env var and parses it.
-    /// If the env var is not set, default config will be returned.
-    pub fn load() -> Result<Config> {
-        if let Some(path) = Config::env_file_path() {
-            Config::load_from_toml_file(path)
-        } else {
-            Ok(Config::default())
-        }
-    }
-
-    fn env_file_path() -> Option<PathBuf> {
-        env::var(ENV_CONFIG).map(|p| p.into()).ok()
-    }
-
-    fn load_from_toml_file<P>(path: P) -> Result<Config>
-    where
-        P: AsRef<Path>,
-    {
-        let mut file = File::open(&path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
-
-        Ok(toml::from_slice(&buf)?)
-    }
+impl CommonConfig for Config {
+    const ENV_CONFIG: &'static str = "PHAEDRA_INGEST_CONFIG";
 }
 
 impl Default for Config {

@@ -6,9 +6,10 @@ use actix_web::{
     HttpResponse,
 };
 use rdkafka::error::KafkaError;
-use toml::de::Error as TOMLError;
 use tracing::{debug, error};
 use tracing_subscriber::filter::ParseError as LogParseError;
+
+use common::config::ConfigError;
 
 use crate::server::WSError;
 
@@ -21,7 +22,7 @@ pub enum Error {
     Kafka(KafkaError),
     IO(IOError),
     LogFilterParse(LogParseError),
-    TOML(TOMLError),
+    Config(ConfigError),
 
     /// Used when server is shutting down and no more websocket connections
     /// are accepted.
@@ -38,7 +39,7 @@ impl fmt::Display for Error {
             Kafka(e) => write!(f, "Kafka producer error: {}", e),
             IO(e) => write!(f, "IO error: {}", e),
             LogFilterParse(e) => write!(f, "Invalid log filter directive: {}", e),
-            TOML(e) => write!(f, "Invalid TOML: {}", e),
+            Config(e) => write!(f, "Invalid TOML: {}", e),
 
             WSNotAccepted => write!(
                 f,
@@ -58,7 +59,7 @@ impl StdError for Error {
             Kafka(e) => Some(e),
             IO(e) => Some(e),
             LogFilterParse(e) => Some(e),
-            TOML(e) => Some(e),
+            Config(e) => Some(e),
 
             WSNotAccepted => None,
         }
@@ -83,7 +84,7 @@ impl ResponseError for Error {
                     self.to_string()
                 }
 
-                e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) => {
+                e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ Config(_) => {
                     error!(
                         "Sending {} response to client; Internal error: {}",
                         status_code, e
@@ -99,7 +100,7 @@ impl ResponseError for Error {
 
         match self {
             JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
-            Kafka(_) | IO(_) | LogFilterParse(_) | TOML(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Kafka(_) | IO(_) | LogFilterParse(_) | Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
 
             WSNotAccepted => StatusCode::CONFLICT,
         }
@@ -120,7 +121,11 @@ impl WSError for Error {
                 self.to_string()
             }
 
-            e @ Kafka(_) | e @ IO(_) | e @ LogFilterParse(_) | e @ TOML(_) | e @ WSNotAccepted => {
+            e @ Kafka(_)
+            | e @ IO(_)
+            | e @ LogFilterParse(_)
+            | e @ Config(_)
+            | e @ WSNotAccepted => {
                 error!(
                     "Sending unsuccessful response to client; Internal error: {}",
                     e
@@ -162,8 +167,8 @@ impl From<LogParseError> for Error {
     }
 }
 
-impl From<TOMLError> for Error {
-    fn from(e: TOMLError) -> Error {
-        Error::TOML(e)
+impl From<ConfigError> for Error {
+    fn from(e: ConfigError) -> Error {
+        Error::Config(e)
     }
 }

@@ -20,9 +20,14 @@ git submodule update --init --recursive
 This project has some private git dependencies which are vendored
 in the `vendor` dir using git submodules.
 
-To fetch or update them:
+To fetch them:
 ```
 git submodule update --init --recursive
+```
+
+To update them:
+```
+git submodule update --remote --init --recursive
 ```
 
 ## Configuration

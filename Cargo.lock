@@ -1002,12 +1002,9 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-tungstenite",
- "toml",
  "tracing",
  "tracing-futures",
- "tracing-subscriber",
  "url",
- "uuid",
 ]
 
 [[package]]

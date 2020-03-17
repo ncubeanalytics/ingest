@@ -26,7 +26,7 @@ version = "0.2.13"
 features = ["signal", "sync"]
 
 [dependencies.common]
-git = "ssh://git@gitlab.com/phaedra-analytics/common.git"
+path = "vendor/common"
 
 [dev-dependencies]
 url = "2.1.1"

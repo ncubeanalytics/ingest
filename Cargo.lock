@@ -530,7 +530,6 @@ dependencies = [
 [[package]]
 name = "common"
 version = "0.1.0"
-source = "git+ssh://git@gitlab.com/phaedra-analytics/common.git#70b713801c82094d33d78cb769855012dd8a8e03"
 dependencies = [
  "serde",
  "toml",

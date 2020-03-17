@@ -1,3 +1,3 @@
 [submodule "vendor/common"]
 	path = vendor/common
-	url = git@gitlab.com:phaedra-analytics/common.git
+	url = ../../phaedra-analytics/common.git

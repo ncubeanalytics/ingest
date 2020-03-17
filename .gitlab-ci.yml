@@ -8,13 +8,11 @@ stages:
 variables:
     CARGO_HOME: $CI_PROJECT_DIR/cargo
     APT_CACHE_DIR: $CI_PROJECT_DIR/apt
+    GIT_SUBMODULE_STRATEGY: recursive
 
 before_script:
     - apt-get update -yq
     - apt-get install -o dir::cache::archives="$APT_CACHE_DIR" -y
-
-    # use gitlab CI token to fetch private gitlab dependencies
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
 
 lint:
     stage: lint

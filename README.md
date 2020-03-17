@@ -35,8 +35,10 @@ Config and default values (TOML format):
 ```toml
 # local address to bind the service to
 addr = '127.0.0.1:8088'
+
+[logging]
 # output logs in JSON format
-log_json = false
+fmt_json = false
 
 [kafka]
 # list of kafka brokers to connect to, comma separated

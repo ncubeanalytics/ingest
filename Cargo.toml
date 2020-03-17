@@ -27,6 +27,7 @@ features = ["signal", "sync"]
 
 [dependencies.common]
 path = "vendor/common"
+features = ["actix_web"]
 
 [dev-dependencies]
 url = "2.1.1"

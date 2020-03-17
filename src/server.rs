@@ -8,7 +8,9 @@ use futures::FutureExt;
 use tracing::{debug, info, warn};
 use tracing_futures::Instrument;
 
-use crate::{error::Result, kafka::Kafka, logging, Config};
+use common::logging;
+
+use crate::{error::Result, kafka::Kafka, Config};
 
 mod connection;
 mod state;

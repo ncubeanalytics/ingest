@@ -1,13 +1,15 @@
 use tokio::signal;
 use tracing::{debug, info};
 
-use ingest::{error::Result, logging, Config, Server};
+use common::config::CommonConfig;
+
+use ingest::{error::Result, Config, Server};
 
 #[actix_rt::main]
 async fn main() -> Result<()> {
     let config = Config::load()?;
 
-    logging::init(&config)?;
+    common::logging::init(&config.logging)?;
 
     let server = Server::start(config)?;
     info!("Server started");

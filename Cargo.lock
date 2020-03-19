@@ -528,6 +528,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "serde",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "copyless"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -982,6 +994,7 @@ dependencies = [
  "actix-web",
  "actix-web-actors",
  "bytes",
+ "common",
  "futures",
  "json",
  "rdkafka",
@@ -989,12 +1002,9 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-tungstenite",
- "toml",
  "tracing",
  "tracing-futures",
- "tracing-subscriber",
  "url",
- "uuid",
 ]
 
 [[package]]

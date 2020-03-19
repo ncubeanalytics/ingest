@@ -9,10 +9,11 @@ use bytes::{Bytes, BytesMut};
 use tracing::{error, trace, warn, Span};
 use tracing_futures::Instrument;
 
+use common::logging;
+
 use crate::error::Error;
 use crate::event::forward_to_kafka;
 use crate::kafka::Kafka;
-use crate::logging;
 use crate::server::ServerState;
 
 mod close;

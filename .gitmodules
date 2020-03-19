@@ -1,0 +1,3 @@
+[submodule "vendor/common"]
+	path = vendor/common
+	url = ../../phaedra-analytics/common.git

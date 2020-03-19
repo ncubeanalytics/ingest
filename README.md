@@ -5,13 +5,40 @@ Works through HTTP and WebSockets.
 
 **TODO**: Document endpoints.
 
+## Clone
+This repo uses git submodules, so to get all the code use:
+```
+git clone --recurse-submodules git@gitlab.com:phaedra-analytics/ingest.git
+
+# or
+git clone git@gitlab.com:phaedra-analytics/ingest.git
+cd ingest
+git submodule update --init --recursive
+```
+
+## Vendored dependencies
+This project has some private git dependencies which are vendored
+in the `vendor` dir using git submodules.
+
+To fetch them:
+```
+git submodule update --init --recursive
+```
+
+To update them:
+```
+git submodule update --remote --init --recursive
+```
+
 ## Configuration
 Config and default values (TOML format):
 ```toml
 # local address to bind the service to
 addr = '127.0.0.1:8088'
+
+[logging]
 # output logs in JSON format
-log_json = false
+fmt_json = false
 
 [kafka]
 # list of kafka brokers to connect to, comma separated
@@ -63,6 +90,9 @@ cargo test
 ## Docker
 To create a docker container with a static binary of the ingest service:
 ```
+# make sure that submodules are up to date
+git submodule update --init --recursive
+
 docker build .
 ```
 

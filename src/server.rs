@@ -8,7 +8,9 @@ use futures::FutureExt;
 use tracing::{debug, info, warn};
 use tracing_futures::Instrument;
 
-use crate::{error::Result, kafka::Kafka, logging, Config};
+use common::logging;
+
+use crate::{error::Result, kafka::Kafka, Config};
 
 mod connection;
 mod state;
@@ -39,17 +41,16 @@ impl Server {
                 .wrap_fn(|req, srv| {
                     // initialize logging for this request
                     let span = logging::req_span(&req);
+                    let _span_guard = span.enter();
 
-                    span.in_scope(|| {
-                        debug!("Received new HTTP request");
-                    });
+                    debug!("Received new HTTP request");
 
                     srv.call(req)
                         .map(|res| {
                             debug!("Sending back response");
                             res
                         })
-                        .instrument(span)
+                        .in_current_span()
                 })
                 .route("/http", web::post().to(connection::http::handle))
                 .route("/ws", web::get().to(connection::ws::handle))

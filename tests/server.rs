@@ -13,6 +13,8 @@ use tokio_tungstenite::{
 };
 use url::Url;
 
+use common::config::CommonConfig;
+
 use ingest::{error::Result as IResult, Config, Server};
 
 const HTTP_PATH: &str = "/http";

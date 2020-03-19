@@ -8,6 +8,7 @@ stages:
 variables:
     CARGO_HOME: $CI_PROJECT_DIR/cargo
     APT_CACHE_DIR: $CI_PROJECT_DIR/apt
+    GIT_SUBMODULE_STRATEGY: recursive
 
 before_script:
     - apt-get update -yq

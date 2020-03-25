@@ -84,10 +84,10 @@ impl ResponseError for Error {
                     self.to_string()
                 }
 
-                e @ Kafka(_) | e @ IO(_) | e @ Logging(_) | e @ Config(_) => {
+                Kafka(_) | IO(_) | Logging(_) | Config(_) => {
                     error!(
                         "Sending {} response to client; Internal error: {}",
-                        status_code, e
+                        status_code, self
                     );
 
                     "Internal server error".to_string()
@@ -112,19 +112,19 @@ impl WSError for Error {
         use Error::*;
 
         match self {
-            e @ JSON(_) | e @ Utf8(_) => {
+            JSON(_) | Utf8(_) => {
                 debug!(
                     "Sending unsuccessful response to client; Client error: {}",
-                    e
+                    self
                 );
 
                 self.to_string()
             }
 
-            e @ Kafka(_) | e @ IO(_) | e @ Logging(_) | e @ Config(_) | e @ WSNotAccepted => {
+            Kafka(_) | IO(_) | Logging(_) | Config(_) | WSNotAccepted => {
                 error!(
                     "Sending unsuccessful response to client; Internal error: {}",
-                    e
+                    self
                 );
 
                 "Internal server error".to_string()

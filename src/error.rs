@@ -1,11 +1,8 @@
 use std::{error::Error as StdError, fmt, io::Error as IOError, str::Utf8Error};
 
-use actix_web::{
-    error::ResponseError,
-    http::{header, StatusCode},
-    HttpResponse,
-};
+use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use rdkafka::error::KafkaError;
+use serde::Serialize;
 use tracing::{debug, error};
 
 use common::config::ConfigError;
@@ -66,33 +63,57 @@ impl StdError for Error {
     }
 }
 
+#[derive(Serialize)]
+struct JSONError {
+    error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+impl From<&Error> for JSONError {
+    fn from(e: &Error) -> JSONError {
+        use Error::*;
+
+        let (error, description) = match e {
+            JSON(_) => ("invalid_json".to_string(), Some(e.to_string())),
+            Utf8(_) => ("invalid_utf8".to_string(), Some(e.to_string())),
+            WSNotAccepted => ("ws_not_accepted".to_string(), Some(e.to_string())),
+
+            // internal server errors should not be converted to JSONError
+            Kafka(_) | IO(_) | Logging(_) | Config(_) => ("".to_string(), None),
+        };
+
+        JSONError { error, description }
+    }
+}
+
 impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         use Error::*;
 
         let status_code = self.status_code();
 
-        HttpResponse::build(status_code)
-            .set_header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-            .body(match self {
-                JSON(_) | Utf8(_) | WSNotAccepted => {
-                    debug!(
-                        "Sending {} response to client; Client error: {}",
-                        status_code, self
-                    );
+        let mut res = HttpResponse::build(status_code);
 
-                    self.to_string()
-                }
+        match self {
+            JSON(_) | Utf8(_) | WSNotAccepted => {
+                debug!(
+                    "Sending {} response to client; Client error: {}",
+                    status_code, self
+                );
 
-                Kafka(_) | IO(_) | Logging(_) | Config(_) => {
-                    error!(
-                        "Sending {} response to client; Internal error: {}",
-                        status_code, self
-                    );
+                res.json(JSONError::from(self))
+            }
 
-                    "Internal server error".to_string()
-                }
-            })
+            Kafka(_) | IO(_) | Logging(_) | Config(_) => {
+                error!(
+                    "Sending {} response to client; Internal error: {}",
+                    status_code, self
+                );
+
+                res.finish()
+            }
+        }
     }
 
     fn status_code(&self) -> StatusCode {

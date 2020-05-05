@@ -88,7 +88,7 @@ cargo test
 ```
 
 ## Docker
-To create a docker container with a static binary of the ingest service:
+To create a docker image with a static binary of the ingest service:
 ```
 # make sure that submodules are up to date
 git submodule update --init --recursive

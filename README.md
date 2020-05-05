@@ -91,7 +91,7 @@ cargo test
 To create a docker image with a static binary of the ingest service:
 ```
 # make sure that submodules are up to date
-git submodule update --init --recursive
+git submodule update --remote --init --recursive
 
 docker build .
 ```

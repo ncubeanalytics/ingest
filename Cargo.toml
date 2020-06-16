@@ -5,21 +5,21 @@ authors = ["Robert Ignat <robert.ignat91@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-futures = "0.3.4"
+futures = "0.3.5"
 rdkafka = "0.23.1"
 bytes = "0.5.4"
-json = "0.12.1"
+json = "0.12.4"
 actix = "0.9.0"
-actix-rt = "1.0.0"
+actix-rt = "1.1.1"
 actix-http = "1.0.1"
 actix-web = "2.0.0"
 actix-web-actors = "2.0.0"
-tracing = "0.1.13"
-tracing-futures = "0.2.3"
-serde = { version = "1.0.104", features = ["derive"] }
+tracing = "0.1.15"
+tracing-futures = "0.2.4"
+serde = { version = "1.0.112", features = ["derive"] }
 
 [dependencies.tokio]
-version = "0.2.13"
+version = "0.2.21"
 features = ["signal", "sync"]
 
 [dependencies.common]
@@ -28,5 +28,5 @@ features = ["actix_web"]
 
 [dev-dependencies]
 url = "2.1.1"
-reqwest = "0.10.4"
+reqwest = "0.10.6"
 tokio-tungstenite = "0.10.1"

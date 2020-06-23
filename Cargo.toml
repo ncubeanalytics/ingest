@@ -20,7 +20,7 @@ serde = { version = "1.0.112", features = ["derive"] }
 
 [dependencies.tokio]
 version = "0.2.21"
-features = ["signal", "sync"]
+features = ["signal"]
 
 [dependencies.common]
 path = "vendor/common"

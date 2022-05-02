@@ -5,7 +5,7 @@ use common::config::CommonConfig;
 
 use ingest::{error::Result, Config, Server};
 
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> Result<()> {
     let config = Config::load()?;
 

@@ -4,14 +4,13 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::FutureExt;
+use futures::TryFutureExt;
 use rdkafka::{
-    error::KafkaError,
     producer::{FutureProducer, FutureRecord},
     util::Timeout,
     ClientConfig,
 };
-use tracing::{error, trace};
+use tracing::trace;
 
 use crate::config::Kafka as KafkaConfig;
 use crate::error::Result;
@@ -45,26 +44,17 @@ impl Kafka {
         Ok(Self(Arc::new(KafkaInner { producer, config })))
     }
 
-    pub async fn send(&self, data: Bytes) -> Result<()> {
-        let record = FutureRecord::to(&self.config.topic)
-            .key("")
-            .payload(data.as_ref());
+    pub async fn send(&self, data: Bytes, tenant_id: i64) -> Result<()> {
+        let topic = topic_name(&self.config.topic_prefix, tenant_id);
+
+        let record = FutureRecord::to(&topic).key("").payload(data.as_ref());
 
         self.producer
-            .send(record, -1)
-            .map(|delivery_status| match delivery_status {
-                Err(_) => {
-                    // means that something is wrong with the producer
-                    error!("Kafka producer internal channel canceled");
-                    Err(KafkaError::Canceled.into())
-                }
-
-                Ok(Err((e, _))) => Err(e.into()),
-
-                _ => {
-                    trace!("Message successfully sent to kafka broker");
-                    Ok(())
-                }
+            .send(record, Timeout::Never)
+            .map_err(|(error, _)| error.into())
+            .map_ok(|_| {
+                trace!(%topic, "Message successfully sent to kafka broker");
+                ()
             })
             .await
     }
@@ -76,4 +66,8 @@ impl Kafka {
 
         trace!("Done flushing kafka producer");
     }
+}
+
+fn topic_name(prefix: &str, tenant_id: i64) -> String {
+    format!("{}{}", prefix, tenant_id)
 }

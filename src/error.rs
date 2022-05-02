@@ -1,4 +1,4 @@
-use std::{error::Error as StdError, fmt, io::Error as IOError, str::Utf8Error};
+use std::{error::Error as StdError, fmt, io::Error as IOError};
 
 use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use rdkafka::error::KafkaError;
@@ -14,8 +14,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    JSON(json::Error),
-    Utf8(Utf8Error),
     Kafka(KafkaError),
     IO(IOError),
     Logging(LoggingError),
@@ -31,8 +29,6 @@ impl fmt::Display for Error {
         use Error::*;
 
         match self {
-            JSON(e) => write!(f, "Invalid JSON: {}", e),
-            Utf8(_) => write!(f, "Invalid utf8 content"),
             Kafka(e) => write!(f, "Kafka producer error: {}", e),
             IO(e) => write!(f, "IO error: {}", e),
             Logging(e) => write!(f, "Invalid log filter directive: {}", e),
@@ -51,8 +47,6 @@ impl StdError for Error {
         use Error::*;
 
         match self {
-            JSON(e) => Some(e),
-            Utf8(e) => Some(e),
             Kafka(e) => Some(e),
             IO(e) => Some(e),
             Logging(e) => Some(e),
@@ -75,8 +69,6 @@ impl From<&Error> for JSONError {
         use Error::*;
 
         let (error, description) = match e {
-            JSON(_) => ("invalid_json".to_string(), Some(e.to_string())),
-            Utf8(_) => ("invalid_utf8".to_string(), Some(e.to_string())),
             WSNotAccepted => ("ws_not_accepted".to_string(), Some(e.to_string())),
 
             // internal server errors should not be converted to JSONError
@@ -96,7 +88,7 @@ impl ResponseError for Error {
         let mut res = HttpResponse::build(status_code);
 
         match self {
-            JSON(_) | Utf8(_) | WSNotAccepted => {
+            WSNotAccepted => {
                 debug!(
                     "Sending {} response to client; Client error: {}",
                     status_code, self
@@ -120,7 +112,6 @@ impl ResponseError for Error {
         use Error::*;
 
         match self {
-            JSON(_) | Utf8(_) => StatusCode::BAD_REQUEST,
             Kafka(_) | IO(_) | Logging(_) | Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
 
             WSNotAccepted => StatusCode::CONFLICT,
@@ -133,15 +124,6 @@ impl WSError for Error {
         use Error::*;
 
         match self {
-            JSON(_) | Utf8(_) => {
-                debug!(
-                    "Sending unsuccessful response to client; Client error: {}",
-                    self
-                );
-
-                self.to_string()
-            }
-
             Kafka(_) | IO(_) | Logging(_) | Config(_) | WSNotAccepted => {
                 error!(
                     "Sending unsuccessful response to client; Internal error: {}",
@@ -151,18 +133,6 @@ impl WSError for Error {
                 "Internal server error".to_string()
             }
         }
-    }
-}
-
-impl From<json::Error> for Error {
-    fn from(e: json::Error) -> Error {
-        Error::JSON(e)
-    }
-}
-
-impl From<Utf8Error> for Error {
-    fn from(e: Utf8Error) -> Error {
-        Error::Utf8(e)
     }
 }
 

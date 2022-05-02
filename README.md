@@ -1,9 +1,9 @@
 # phaedra ingest service
-phaedra service for ingesting events from clients.
+phaedra service for ingesting data from clients.
+This service does no validation or parsing of data and simply forwards everything
+as is in client requests to tenant specific kafka topics.
 
 Works through HTTP and WebSockets.
-
-**TODO**: Document endpoints.
 
 ## Clone
 This repo uses git submodules, so to get all the code use:
@@ -43,8 +43,8 @@ fmt_json = false
 [kafka]
 # list of kafka brokers to connect to, comma separated
 servers = '127.0.0.1:19092'
-# topic to send events to
-topic = 'events'
+# prefix used for tenant topics
+topic_prefix = 'in_'
 # value for "delivery.timeout.ms" kafka producer config property
 timeout_ms = '5000'
 # value for "acks" kafka producer config property
@@ -61,11 +61,6 @@ PHAEDRA_INGEST_CONFIG=/path/to/config.toml cargo run
 If no config file is provided or values are missing, defaults will be used.
 
 ## Testing
-#### Unit
-```
-cargo test --lib
-```
-
 #### Integration
 To run **integration** tests, you will need a kafka broker.
 By default, ingest tries to connect to one at`127.0.0.1:19092`.

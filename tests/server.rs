@@ -20,26 +20,7 @@ use ingest::{error::Result as IResult, Config, Server};
 const HTTP_PATH: &str = "/http";
 const WS_PATH: &str = "/ws";
 
-const INVALID_DATA: &[&str] = &["not json", "null", "1", r#" { "an": "object" } "#];
-const VALID_DATA: &[&str] = &[
-    r#"
-    [
-        {
-            "single": "object"
-        }
-    ]
-    "#,
-    r#"
-    [
-        {
-            "some": "json"
-        },
-        {
-            "some": "more"
-        }
-    ]
-    "#,
-    r#"
+const DATA: &str = r#"
     [
         {
             "some": {
@@ -54,77 +35,21 @@ const VALID_DATA: &[&str] = &[
             }
         }
     ]
-    "#,
-];
-
-#[actix_rt::test]
-async fn http_bad_request() -> IResult<()> {
-    let server = start_server()?;
-    let client = Client::new();
-
-    for case in INVALID_DATA {
-        let res = client
-            .post(http_path(&server))
-            .body(*case)
-            .send()
-            .await
-            .expect("failed to send bad http request to server");
-
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    }
-
-    server.kill().await;
-
-    Ok(())
-}
+    "#;
 
 #[actix_rt::test]
 async fn http_ok() -> IResult<()> {
     let server = start_server()?;
     let client = Client::new();
 
-    for case in VALID_DATA {
-        let res = client
-            .post(http_path(&server))
-            .body(*case)
-            .send()
-            .await
-            .expect("failed to send good http request to server");
+    let res = client
+        .post(http_path(&server))
+        .body(DATA)
+        .send()
+        .await
+        .expect("failed to send good http request to server");
 
-        assert_eq!(res.status(), StatusCode::OK);
-    }
-
-    server.kill().await;
-
-    Ok(())
-}
-
-#[actix_rt::test]
-async fn ws_unsuccessful() -> Result<(), Box<dyn Error>> {
-    let server = start_server()?;
-
-    let mut client = ws_client(&server).await?;
-
-    for case in INVALID_DATA {
-        let text_msg = WSMessage::text(*case);
-        let byte_msg = WSMessage::binary(case.as_bytes());
-
-        for msg in vec![text_msg, byte_msg] {
-            client
-                .send(msg.clone())
-                .await
-                .expect("failed to send ws text message");
-
-            let res = next_json(&mut client).await?;
-
-            if res["success"] == true {
-                panic!(
-                    r#"Websocket request "{}" expected unsuccessful response, but got "{}""#,
-                    msg, res
-                );
-            }
-        }
-    }
+    assert_eq!(res.status(), StatusCode::CREATED);
 
     server.kill().await;
 
@@ -137,24 +62,22 @@ async fn ws_successful() -> Result<(), Box<dyn Error>> {
 
     let mut client = ws_client(&server).await?;
 
-    for case in VALID_DATA {
-        let text_msg = WSMessage::text(*case);
-        let byte_msg = WSMessage::binary(case.as_bytes());
+    let text_msg = WSMessage::text(DATA);
+    let byte_msg = WSMessage::binary(DATA.as_bytes());
 
-        for msg in vec![text_msg, byte_msg] {
-            client
-                .send(msg.clone())
-                .await
-                .expect("failed to send ws text message");
+    for msg in vec![text_msg, byte_msg] {
+        client
+            .send(msg.clone())
+            .await
+            .expect("failed to send ws text message");
 
-            let res = next_json(&mut client).await?;
+        let res = next_json(&mut client).await?;
 
-            if res["success"] == false {
-                panic!(
-                    r#"Websocket request "{}" expected successful response, but got "{}""#,
-                    msg, res
-                );
-            }
+        if res["success"] == false {
+            panic!(
+                r#"Websocket request "{}" expected successful response, but got "{}""#,
+                msg, res
+            );
         }
     }
 

@@ -14,7 +14,7 @@ use common::logging;
 use crate::error::Error;
 use crate::event::forward_to_kafka;
 use crate::kafka::Kafka;
-use crate::server::ServerState;
+use crate::server::{get_tenant_id, ServerState};
 
 mod close;
 mod error;
@@ -33,7 +33,7 @@ pub async fn handle(
 
     if state.accepting_ws() {
         ws::start(
-            WSHandler::new(state.kafka.clone(), state, log_span),
+            WSHandler::new(state.kafka.clone(), get_tenant_id(&req), state, log_span),
             &req,
             stream,
         )
@@ -46,22 +46,29 @@ pub struct WSHandler {
     log_span: Span,
     kafka: Kafka,
     server_state: web::Data<ServerState>,
+    tenant_id: i64,
     /// Used for continuation messages
     fragment_buf: Option<BytesMut>,
 }
 
 impl WSHandler {
-    fn new(kafka: Kafka, server_state: web::Data<ServerState>, log_span: Span) -> Self {
+    fn new(
+        kafka: Kafka,
+        tenant_id: i64,
+        server_state: web::Data<ServerState>,
+        log_span: Span,
+    ) -> Self {
         Self {
+            log_span,
             kafka,
             server_state,
-            log_span,
+            tenant_id,
             fragment_buf: None,
         }
     }
 
     fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes) {
-        let fut = forward_to_kafka(events, self.kafka.clone()).in_current_span();
+        let fut = forward_to_kafka(events, self.kafka.clone(), self.tenant_id).in_current_span();
 
         let span = Span::current();
         let actor_fut = fut.into_actor(self).map(move |result, _, ctx| {

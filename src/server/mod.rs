@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use actix_web::{
     dev::{Server as ActixServer, Service},
-    web, App, HttpServer,
+    web, App, HttpRequest, HttpServer,
 };
 use futures::FutureExt;
 use tracing::{debug, info, warn};
@@ -92,4 +92,9 @@ impl Server {
     pub fn addrs(&self) -> &[SocketAddr] {
         &self.bound_addrs
     }
+}
+
+fn get_tenant_id(_req: &HttpRequest) -> i64 {
+    // TODO: implement this function when authentication is ready
+    1
 }

@@ -1,0 +1,13 @@
+# local address to bind the service to
+addr = '127.0.0.1:8088'
+# prefix used for tenant topics
+topic_prefix = 'in_'
+
+[logging]
+# output logs in JSON format
+fmt_json = false
+
+[librdkafka_config]
+# accepts any librdkafka configuration value
+"bootstrap.servers" = "localhost:9093"
+

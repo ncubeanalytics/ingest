@@ -6,13 +6,13 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::TryFutureExt;
 use rdkafka::{
-    producer::{FutureProducer, FutureRecord},
-    util::Timeout,
     ClientConfig,
+    producer::{FutureProducer, FutureRecord, Producer},
+    util::Timeout,
 };
 use tracing::trace;
 
-use crate::config::Kafka as KafkaConfig;
+use crate::config::Config;
 use crate::error::Result;
 
 /// Kafka producer wrapper.
@@ -22,7 +22,7 @@ pub struct Kafka(Arc<KafkaInner>);
 
 pub struct KafkaInner {
     producer: FutureProducer,
-    config: KafkaConfig,
+    config: Config,
 }
 
 impl Deref for Kafka {
@@ -34,14 +34,16 @@ impl Deref for Kafka {
 }
 
 impl Kafka {
-    pub fn start(config: KafkaConfig) -> Result<Kafka> {
-        let producer = ClientConfig::new()
-            .set("bootstrap.servers", &config.servers)
-            .set("delivery.timeout.ms", &config.timeout_ms)
-            .set("acks", &config.acks)
-            .create()?;
+    pub fn start(config: &Config) -> Result<Kafka> {
+        let mut producer_config = ClientConfig::new();
 
-        Ok(Self(Arc::new(KafkaInner { producer, config })))
+        for (key, value) in &config.librdkafka_config {
+            producer_config.set(key, value);
+        }
+
+        let producer = producer_config.create()?;
+
+        Ok(Self(Arc::new(KafkaInner { producer, config: config.clone() })))
     }
 
     pub async fn send(&self, data: Bytes, tenant_id: i64) -> Result<()> {

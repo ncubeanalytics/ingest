@@ -1,7 +1,6 @@
+use common::config::CommonConfig;
 use tokio::signal;
 use tracing::{debug, info};
-
-use common::config::CommonConfig;
 
 use ingest::{error::Result, Config, Server};
 
@@ -10,7 +9,7 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
 
     common::logging::init(&config.logging)?;
-
+    debug!("Starting server...");
     let server = Server::start(config)?;
     info!("Server started");
 

@@ -4,20 +4,18 @@ use actix_web::{
     dev::{Server as ActixServer, Service},
     web, App, HttpRequest, HttpServer,
 };
+use common::logging;
 use futures::FutureExt;
 use tracing::{debug, info, warn};
 use tracing_futures::Instrument;
 
-use common::logging;
+pub use connection::ws::WSError;
+use state::ServerState;
 
 use crate::{error::Result, kafka::Kafka, Config};
 
 mod connection;
 mod state;
-
-pub use connection::ws::WSError;
-
-use state::ServerState;
 
 pub struct Server {
     http_server: ActixServer,
@@ -28,7 +26,7 @@ pub struct Server {
 
 impl Server {
     pub fn start(config: Config) -> Result<Self> {
-        let kafka = Kafka::start(config.kafka.clone())?;
+        let kafka = Kafka::start(&config)?;
 
         let state = web::Data::new(ServerState::new(kafka.clone()));
         let app_state = state.clone();
@@ -52,7 +50,7 @@ impl Server {
                         })
                         .in_current_span()
                 })
-                .route("/http", web::post().to(connection::http::handle))
+                .route("/", web::post().to(connection::http::handle))
                 .route("/ws", web::get().to(connection::ws::handle))
         })
         .disable_signals()

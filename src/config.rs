@@ -9,7 +9,7 @@ use serde::Deserialize;
 #[serde(default)]
 pub struct Config {
     pub addr: SocketAddr,
-    pub topic_prefix: String,
+    pub topic: String,
     pub logging: LoggingConfig,
     pub librdkafka_config: HashMap<String, String>,
 }
@@ -22,7 +22,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             addr: ([127, 0, 0, 1], 8088).into(),
-            topic_prefix: "in_".to_string(),
+            topic: "events_raw".to_owned(),
             logging: LoggingConfig::default(),
             librdkafka_config: HashMap::new(),
         }

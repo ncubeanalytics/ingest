@@ -6,9 +6,9 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::TryFutureExt;
 use rdkafka::{
-    ClientConfig,
     producer::{FutureProducer, FutureRecord, Producer},
     util::Timeout,
+    ClientConfig,
 };
 use tracing::trace;
 
@@ -43,19 +43,24 @@ impl Kafka {
 
         let producer = producer_config.create()?;
 
-        Ok(Self(Arc::new(KafkaInner { producer, config: config.clone() })))
+        Ok(Self(Arc::new(KafkaInner {
+            producer,
+            config: config.clone(),
+        })))
     }
 
-    pub async fn send(&self, data: Bytes, tenant_id: i64) -> Result<()> {
-        let topic = topic_name(&self.config.topic_prefix, tenant_id);
+    pub async fn send(&self, data: Bytes, _tenant_id: i64) -> Result<()> {
+        // let topic = topic_name(&self.config.topic_prefix, tenant_id);
 
-        let record = FutureRecord::to(&topic).key("").payload(data.as_ref());
+        let record = FutureRecord::to(&self.config.topic)
+            .key("")
+            .payload(data.as_ref());
 
         self.producer
             .send(record, Timeout::Never)
             .map_err(|(error, _)| error.into())
             .map_ok(|_| {
-                trace!(%topic, "Message successfully sent to kafka broker");
+                trace!(%self.config.topic, "Message successfully sent to kafka broker");
                 ()
             })
             .await
@@ -70,6 +75,6 @@ impl Kafka {
     }
 }
 
-fn topic_name(prefix: &str, tenant_id: i64) -> String {
+fn _topic_name(prefix: &str, tenant_id: i64) -> String {
     format!("{}{}", prefix, tenant_id)
 }

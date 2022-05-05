@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use actix::{
     fut::WrapFuture, Actor, ActorContext, ActorFuture, Arbiter, AsyncContext, Handler,
     StreamHandler,
@@ -6,10 +8,12 @@ use actix_http::ws::Item;
 use actix_web::{web, HttpRequest, Responder};
 use actix_web_actors::ws;
 use bytes::{Bytes, BytesMut};
+use common::logging;
 use tracing::{error, trace, warn, Span};
 use tracing_futures::Instrument;
 
-use common::logging;
+pub use close::WSClose;
+pub use error::WSError;
 
 use crate::error::Error;
 use crate::event::forward_to_kafka;
@@ -18,9 +22,6 @@ use crate::server::{get_tenant_id, ServerState};
 
 mod close;
 mod error;
-
-pub use close::WSClose;
-pub use error::WSError;
 
 pub async fn handle(
     req: HttpRequest,
@@ -68,7 +69,13 @@ impl WSHandler {
     }
 
     fn handle_events(&self, ctx: &mut <Self as Actor>::Context, events: Bytes) {
-        let fut = forward_to_kafka(events, self.kafka.clone(), self.tenant_id).in_current_span();
+        let fut = forward_to_kafka(
+            vec![events],
+            HashMap::new(),
+            self.kafka.clone(),
+            self.tenant_id,
+        )
+        .in_current_span();
 
         let span = Span::current();
         let actor_fut = fut.into_actor(self).map(move |result, _, ctx| {

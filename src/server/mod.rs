@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use actix_web::{
     dev::{Server as ActixServer, Service},
-    web, App, HttpRequest, HttpServer,
+    web, App, HttpRequest, HttpResponse, HttpServer,
 };
 use common::logging;
 use futures::FutureExt;
@@ -50,8 +50,11 @@ impl Server {
                         })
                         .in_current_span()
                 })
-                .route("/", web::post().to(connection::http::handle))
-                .route("/ws", web::get().to(connection::ws::handle))
+                .service(
+                    web::resource("/{schema_id}").route(web::post().to(connection::http::handle)),
+                )
+                .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
+                .default_service(web::route().to(|| HttpResponse::NotFound()))
         })
         .disable_signals()
         .bind(&config.addr)?;

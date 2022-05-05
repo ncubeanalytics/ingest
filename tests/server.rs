@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use common::config::CommonConfig;
 use futures::{SinkExt, StreamExt};
 use reqwest::{Client, StatusCode};
 use tokio::net::TcpStream;
@@ -12,8 +13,6 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 use url::Url;
-
-use common::config::CommonConfig;
 
 use ingest::{error::Result as IResult, Config, Server};
 
@@ -119,7 +118,6 @@ fn start_server() -> IResult<Server> {
 
     // bind to any available port
     config.addr = ([127, 0, 0, 1], 0).into();
-    config.kafka.timeout_ms = "5000".to_string();
 
     Server::start(config)
 }

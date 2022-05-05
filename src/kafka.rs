@@ -1,10 +1,13 @@
 //! Kafka producer wrapper.
 
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use futures::future::join_all;
 use futures::TryFutureExt;
+use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     producer::{FutureProducer, FutureRecord, Producer},
     util::Timeout,
@@ -49,12 +52,22 @@ impl Kafka {
         })))
     }
 
-    pub async fn send(&self, data: Bytes, _tenant_id: i64) -> Result<()> {
+    pub async fn send(
+        &self,
+        data: Bytes,
+        headers: HashMap<String, String>,
+        _tenant_id: i64,
+    ) -> Result<()> {
         // let topic = topic_name(&self.config.topic_prefix, tenant_id);
 
+        let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
+        for (key, val) in headers {
+            kafka_headers = kafka_headers.add(&key, &val);
+        }
         let record = FutureRecord::to(&self.config.topic)
             .key("")
-            .payload(data.as_ref());
+            .payload(data.as_ref())
+            .headers(kafka_headers);
 
         self.producer
             .send(record, Timeout::Never)
@@ -66,6 +79,34 @@ impl Kafka {
             .await
     }
 
+    pub async fn send_many(
+        &self,
+        data: Vec<Bytes>,
+        headers: HashMap<String, String>,
+        _tenant_id: i64,
+    ) -> Result<()> {
+        let mut futures = Vec::with_capacity(data.len());
+
+        // sending events in order can be configured,
+        // although it appears a bit problematic (see message timeouts)
+        // https://github.com/edenhill/librdkafka/blob/master/INTRODUCTION.md#reordering
+        // https://stackoverflow.com/a/53379022/2440380
+
+        // XXX: this does not guarantee sending in order due to internal retries of
+        // FutureProducer.send() in cases where the local queue is full. need to fix this so that
+        // such retries happen while taking order into account
+        // https://github.com/fede1024/rust-rdkafka/issues/468
+        for d in data {
+            futures.push(self.send(d, headers.clone(), _tenant_id))
+        }
+
+        join_all(futures) // XXX: does join_all execute in order?
+            .await
+            .into_iter()
+            .collect::<Result<Vec<()>>>()?;
+        Ok(())
+    }
+
     pub fn stop(self) {
         trace!("Flushing kafka producer");
 
@@ -73,8 +114,4 @@ impl Kafka {
 
         trace!("Done flushing kafka producer");
     }
-}
-
-fn _topic_name(prefix: &str, tenant_id: i64) -> String {
-    format!("{}{}", prefix, tenant_id)
 }

@@ -57,6 +57,7 @@ impl Server {
                 .default_service(web::route().to(|| HttpResponse::NotFound()))
         })
         .disable_signals()
+        .keep_alive(config.keepalive_seconds)
         .bind(&config.addr)?;
 
         // in case we bind to any available port

@@ -16,7 +16,7 @@ pub struct Config {
 }
 
 impl CommonConfig for Config {
-    const ENV_CONFIG: &'static str = "PHAEDRA_INGEST_CONFIG";
+    const ENV_CONFIG: &'static str = "NCUBE_INGEST_CONFIG";
 }
 
 impl Default for Config {

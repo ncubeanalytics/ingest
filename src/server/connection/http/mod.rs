@@ -16,14 +16,18 @@ pub async fn handle(
     path: web::Path<String>,
     state: web::Data<ServerState>,
 ) -> impl Responder {
+    let tenant_id = get_tenant_id(&req);
     let schema_id = path.into_inner();
     let data = split_newlines(body);
 
     forward_to_kafka(
         data,
-        HashMap::from([("ncube-ingest-schema-id".to_owned(), schema_id)]),
+        HashMap::from([
+            ("ncube-ingest-schema-id".to_owned(), schema_id),
+            ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
+        ]),
         state.kafka.clone(),
-        get_tenant_id(&req),
+        tenant_id,
     )
     .await
     .map(|_| HttpResponse::Created())

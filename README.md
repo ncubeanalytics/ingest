@@ -1,5 +1,5 @@
-# phaedra ingest service
-phaedra service for ingesting data from clients.
+# N-Cube ingest service
+N-Cube service for ingesting data from clients.
 This service does no validation or parsing of data and simply forwards everything
 as is in client requests to tenant specific kafka topics.
 
@@ -8,10 +8,10 @@ Works through HTTP and WebSockets.
 ## Clone
 This repo uses git submodules, so to get all the code use:
 ```
-git clone --recurse-submodules git@gitlab.com:phaedra-analytics/ingest.git
+git clone --recurse-submodules git@gitlab.com:n-cube/ingest.git
 
 # or
-git clone git@gitlab.com:phaedra-analytics/ingest.git
+git clone git@gitlab.com:n-cube/ingest.git
 cd ingest
 git submodule update --init --recursive
 ```
@@ -52,10 +52,10 @@ acks = 'all'
 ```
 
 The ingest service supports loading configuration from a TOML file.
-If you want to use a custom configuration file set the `PHAEDRA_INGEST_CONFIG`
+If you want to use a custom configuration file set the `NCUBE_INGEST_CONFIG`
 env var to the file path:
 ```
-PHAEDRA_INGEST_CONFIG=/path/to/config.toml cargo run
+NCUBE_INGEST_CONFIG=/path/to/config.toml cargo run
 ```
 
 If no config file is provided or values are missing, defaults will be used.

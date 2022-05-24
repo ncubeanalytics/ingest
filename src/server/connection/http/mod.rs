@@ -24,6 +24,8 @@ pub async fn handle(
         data,
         HashMap::from([
             ("ncube-ingest-schema-id".to_owned(), schema_id),
+            // TODO:
+            //("ncube-ingest-schema-revision".to_owned(), revision_number),
             ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
         ]),
         state.kafka.clone(),

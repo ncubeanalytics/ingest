@@ -7,26 +7,38 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
+pub struct HeaderNames {
+    pub schema_id: String,
+    pub ip: String,
+}
+
+impl Default for HeaderNames {
+    fn default() -> HeaderNames {
+        HeaderNames {
+            schema_id: "ncube-ingest-schema-id".to_owned(),
+            ip: "ncube-ingest-ip".to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub addr: SocketAddr,
-    pub keepalive_seconds: usize,
-    pub topic: String,
+    pub destination_topic: String,
+    #[serde(default = "default_keepalive_seconds")]
+    pub keepalive_seconds: u64,
+    #[serde(default)]
+    pub headers: HeaderNames,
+    #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
     pub librdkafka_config: HashMap<String, String>,
 }
 
 impl CommonConfig for Config {
-    const ENV_CONFIG: &'static str = "NCUBE_INGEST_CONFIG";
+    const CMD_NAME: &'static str = "ingestd";
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config {
-            addr: ([127, 0, 0, 1], 8088).into(),
-            keepalive_seconds: 60,
-            topic: "events_raw".to_owned(),
-            logging: LoggingConfig::default(),
-            librdkafka_config: HashMap::new(),
-        }
-    }
+fn default_keepalive_seconds() -> u64 {
+    60
 }

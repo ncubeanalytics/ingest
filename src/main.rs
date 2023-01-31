@@ -4,19 +4,18 @@ use tracing::{debug, info};
 
 use ingest::{error::Result, Config, Server};
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     let config = Config::load()?;
-
     common::logging::init(&config.logging)?;
-    debug!("Starting server...");
-    let server = Server::start(config)?;
+    debug!("Config: {:?}", config);
+
+    info!("Starting server...");
+    let server = Server::start(config).await?;
     info!("Server started");
 
     close_signal().await?;
-    debug!("Received close signal");
-
-    info!("Server shutting down...");
+    info!("Shutting down...");
     server.stop().await;
 
     Ok(())
@@ -31,11 +30,12 @@ async fn close_signal() -> Result<()> {
 async fn close_signal() -> Result<()> {
     use futures::stream::{select_all, StreamExt};
     use signal::unix::{self, SignalKind};
+    use tokio_stream::wrappers::SignalStream;
 
     select_all(vec![
-        unix::signal(SignalKind::interrupt())?,
-        unix::signal(SignalKind::terminate())?,
-        unix::signal(SignalKind::quit())?,
+        SignalStream::new(unix::signal(SignalKind::interrupt())?),
+        SignalStream::new(unix::signal(SignalKind::terminate())?),
+        SignalStream::new(unix::signal(SignalKind::quit())?),
     ])
     .next()
     .await;

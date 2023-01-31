@@ -21,7 +21,16 @@ pub async fn handle(
 
     forward_to_kafka(
         data,
-        HashMap::from([("ncube-ingest-schema-id".to_owned(), schema_id)]),
+        HashMap::from([
+            (state.header_names.schema_id.clone(), schema_id),
+            (
+                state.header_names.ip.clone(),
+                req.connection_info()
+                    .realip_remote_addr()
+                    .unwrap_or("")
+                    .to_owned(),
+            ),
+        ]),
         state.kafka.clone(),
         get_tenant_id(&req),
     )

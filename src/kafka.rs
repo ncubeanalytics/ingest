@@ -7,13 +7,13 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::TryFutureExt;
-use rdkafka::message::OwnedHeaders;
+use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     producer::{FutureProducer, FutureRecord, Producer},
     util::Timeout,
     ClientConfig,
 };
-use tracing::trace;
+use tracing::{error, trace};
 
 use crate::config::Config;
 use crate::error::Result;
@@ -58,14 +58,20 @@ impl Kafka {
         headers: HashMap<String, String>,
         _tenant_id: i64,
     ) -> Result<()> {
-        // let topic = topic_name(&self.config.topic_prefix, tenant_id);
-
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
-            kafka_headers = kafka_headers.add(&key, &val);
+            kafka_headers = kafka_headers.insert(Header {
+                key: &key,
+                value: Some(&val),
+            });
         }
-        let record = FutureRecord::to(&self.config.topic)
+        let record = FutureRecord::to(&self.config.destination_topic)
             .key("")
+            // an empty key with partitioner:consistent_random will randomly distribute across
+            // the partitions
+            // XXX: figure out how to specify key
+            // one option can be the schema id
+            // perhaps sender can accompany the payload with a key as well
             .payload(data.as_ref())
             .headers(kafka_headers);
 
@@ -73,7 +79,7 @@ impl Kafka {
             .send(record, Timeout::Never)
             .map_err(|(error, _)| error.into())
             .map_ok(|_| {
-                trace!(%self.config.topic, "Message successfully sent to kafka broker");
+                trace!(%self.config.destination_topic, "Message successfully sent to kafka broker");
                 ()
             })
             .await
@@ -110,7 +116,9 @@ impl Kafka {
     pub fn stop(self) {
         trace!("Flushing kafka producer");
 
-        self.producer.flush(Timeout::Never);
+        if let Err(e) = self.producer.flush(Timeout::Never) {
+            error!("Flushing kafka producer failed with error {}", e);
+        }
 
         trace!("Done flushing kafka producer");
     }

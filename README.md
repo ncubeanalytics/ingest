@@ -8,10 +8,10 @@ Works through HTTP and WebSockets.
 ## Clone
 This repo uses git submodules, so to get all the code use:
 ```
-git clone --recurse-submodules git@gitlab.com:phaedra-analytics/ingest.git
+git clone --recurse-submodules git@gitlab.com:n-cube/ingest.git
 
 # or
-git clone git@gitlab.com:phaedra-analytics/ingest.git
+git clone git@gitlab.com:n-cube/ingest.git
 cd ingest
 git submodule update --init --recursive
 ```
@@ -31,34 +31,8 @@ git submodule update --remote --init --recursive
 ```
 
 ## Configuration
-Config and default values (TOML format):
-```toml
-# local address to bind the service to
-addr = '127.0.0.1:8088'
 
-[logging]
-# output logs in JSON format
-fmt_json = false
-
-[kafka]
-# list of kafka brokers to connect to, comma separated
-servers = '127.0.0.1:19092'
-# prefix used for tenant topics
-topic_prefix = 'in_'
-# value for "delivery.timeout.ms" kafka producer config property
-timeout_ms = '5000'
-# value for "acks" kafka producer config property
-acks = 'all'
-```
-
-The ingest service supports loading configuration from a TOML file.
-If you want to use a custom configuration file set the `PHAEDRA_INGEST_CONFIG`
-env var to the file path:
-```
-PHAEDRA_INGEST_CONFIG=/path/to/config.toml cargo run
-```
-
-If no config file is provided or values are missing, defaults will be used.
+Check [config.sample.toml](./config.sample.toml)
 
 ## Testing
 #### Integration

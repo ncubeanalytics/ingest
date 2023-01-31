@@ -1,6 +1,7 @@
 //! Kafka producer wrapper.
 
 use std::collections::HashMap;
+use std::fs;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -42,6 +43,11 @@ impl Kafka {
 
         for (key, value) in &config.librdkafka_config {
             producer_config.set(key, value);
+        }
+
+        if let Some(sasl_password_path) = &config.librdkafka_secrets.sasl_password_path {
+            let content = fs::read_to_string(sasl_password_path)?;
+            producer_config.set("sasl.password", content);
         }
 
         let producer = producer_config.create()?;

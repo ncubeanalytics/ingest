@@ -21,6 +21,12 @@ impl Default for HeaderNames {
     }
 }
 
+#[derive(Clone, Default, Debug, Deserialize)]
+#[serde(default)]
+pub struct KafkaSecrets {
+    pub sasl_password_path: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub addr: SocketAddr,
@@ -33,6 +39,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub librdkafka_config: HashMap<String, String>,
+    #[serde(default)]
+    pub librdkafka_secrets: KafkaSecrets,
 }
 
 impl CommonConfig for Config {

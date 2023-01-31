@@ -15,3 +15,7 @@ fmt_json = false
 [librdkafka_config]
 # accepts any librdkafka configuration value
 "bootstrap.servers" = "localhost:9093"
+
+[librdkafka_secrets]
+# the sasl.password secret is read from a file
+sasl_password_path = "/path/to/sasl_password"

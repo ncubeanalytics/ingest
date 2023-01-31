@@ -8,8 +8,7 @@ pub async fn forward_to_kafka(
     data: Vec<Bytes>,
     headers: HashMap<String, String>,
     kafka: Kafka,
-    _tenant_id: i64,
 ) -> Result<()> {
-    kafka.send_many(data, headers, _tenant_id).await?;
+    kafka.send_many(data, headers).await?;
     Ok(())
 }

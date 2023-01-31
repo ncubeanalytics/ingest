@@ -52,12 +52,7 @@ impl Kafka {
         })))
     }
 
-    pub async fn send(
-        &self,
-        data: Bytes,
-        headers: HashMap<String, String>,
-        _tenant_id: i64,
-    ) -> Result<()> {
+    pub async fn send(&self, data: Bytes, headers: HashMap<String, String>) -> Result<()> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
             kafka_headers = kafka_headers.insert(Header {
@@ -89,7 +84,6 @@ impl Kafka {
         &self,
         data: Vec<Bytes>,
         headers: HashMap<String, String>,
-        _tenant_id: i64,
     ) -> Result<()> {
         let mut futures = Vec::with_capacity(data.len());
 
@@ -103,7 +97,7 @@ impl Kafka {
         // such retries happen while taking order into account
         // https://github.com/fede1024/rust-rdkafka/issues/468
         for d in data {
-            futures.push(self.send(d, headers.clone(), _tenant_id))
+            futures.push(self.send(d, headers.clone()))
         }
 
         join_all(futures) // XXX: does join_all execute in order?

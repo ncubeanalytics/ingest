@@ -1,5 +1,5 @@
-# phaedra ingest service
-phaedra service for ingesting data from clients.
+# N-Cube ingest service
+N-Cube service for ingesting data from clients.
 This service does no validation or parsing of data and simply forwards everything
 as is in client requests to tenant specific kafka topics.
 

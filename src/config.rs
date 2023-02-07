@@ -45,6 +45,7 @@ pub struct Config {
 
 impl CommonConfig for Config {
     const CMD_NAME: &'static str = "ingestd";
+    const DEFAULT_CONFIG_PATH: &'static str = "/etc/ncube-ingest/ingest.toml";
 }
 
 fn default_keepalive_seconds() -> u64 {

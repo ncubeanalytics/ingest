@@ -1,10 +1,10 @@
-FROM rust:1.56.1-slim-bullseye AS build
+FROM rust:1.67.1-slim-buster AS build
 RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev -y
-WORKDIR /usr/src/query
+WORKDIR /usr/src/ingest
 COPY . .
 RUN cargo build --target x86_64-unknown-linux-gnu --release --bins
 
-FROM debian:bullseye-slim
+FROM debian:buster-20230109-slim
 RUN apt-get update -y && apt-get install ca-certificates -y
-COPY --from=build /usr/src/query/target/x86_64-unknown-linux-gnu/release/ingest /usr/local/bin/ingestd
-CMD ["ingestd"]
+COPY --from=build /usr/src/ingest/target/x86_64-unknown-linux-gnu/release/ingest /usr/local/bin/ingestd
+ENTRYPOINT ["ingestd"]

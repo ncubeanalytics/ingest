@@ -37,18 +37,15 @@ Check [config.sample.toml](./config.sample.toml)
 ## Testing
 #### Integration
 To run **integration** tests, you will need a kafka broker.
-By default, ingest tries to connect to one at`127.0.0.1:19092`.
-You can start a broker at that address with docker compose:
-```
-docker-compose up -d
-```
 
-If you want to use a different broker address use a configuration file as
-explained in the [Configuration](#configuration) section.
+You can start a broker with docker compose:
+```
+BROKER_HOST=localhost BROKER_PORT=19092 docker-compose up -d
+```
 
 Run the integration tests:
 ```
-cargo test --test server
+BROKER_ADDRESS=localhost:19092 cargo test --test server
 ```
 
 Run all tests:
@@ -79,12 +76,9 @@ For development:
 ```
 cargo build
 ```
-For production use the [docker container](#docker).
 
 ## Run
 For development:
 ```
 cargo run
 ```
-
-For production use the [docker container](#docker).

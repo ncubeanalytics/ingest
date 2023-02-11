@@ -41,14 +41,20 @@ async fn http_ok() -> IResult<()> {
 }
 
 async fn start_server() -> IResult<Server> {
-    let config = Config {
-        addr: ([127, 0, 0, 1], 0).into(), // bind to any available port
-        destination_topic: "".to_string(),
-        keepalive_seconds: Default::default(),
-        headers: Default::default(),
-        logging: Default::default(),
-        librdkafka_config: Default::default(),
-    };
+    let mut config: Config = serde_json::from_str(
+        r#"
+        {"addr": "127.0.0.1:0",
+        "destination_topic": "test",
+        "librdkafka_config": {"bootstrap.servers":"localhost:9092" }
+        }"#,
+    )
+    .unwrap();
+
+    if let Ok(broker_address) = std::env::var("BROKER_ADDRESS") {
+        config
+            .librdkafka_config
+            .insert("bootstrap.servers".to_owned(), broker_address);
+    }
 
     Server::start(config).await
 }

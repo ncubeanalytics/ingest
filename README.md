@@ -55,21 +55,15 @@ cargo test
 
 ## Docker
 To create a docker image with a static binary of the ingest service:
-```
-# make sure that submodules are up to date
-git submodule update --remote --init --recursive
-
-docker build .
+```sh
+./scripts/build.sh $VERSION
 ```
 
-To set up and run docker containers for kafka and zookeeper (useful when
-developing/running integration tests):
-```
-docker-compose up -d
-```
+Push it to docker registry
 
-The containerized kafka broker will be accessible at `localhost:19092`, which
-is also the default kafka broker address that the ingest service uses.
+```sh
+./scripts/push.sh $VERSION
+```
 
 ## Build
 For development:

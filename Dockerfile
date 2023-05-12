@@ -1,6 +1,18 @@
-FROM rust:1.69.0-slim-bullseye AS build
-RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev -y
+FROM rust:1.69.0-bullseye AS build
+RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3.9-dev -y
+
+# workaround to cache dependencies compilation
+# https://github.com/rust-lang/cargo/issues/2644#issuecomment-335272535
+# https://stackoverflow.com/questions/42130132/can-cargo-download-and-build-dependencies-without-also-building-the-application
+WORKDIR /usr/src
+RUN USER=root cargo new --vcs none ingest
 WORKDIR /usr/src/ingest
+COPY vendor ./vendor/
+COPY Cargo.toml Cargo.lock ./
+RUN cargo build --target x86_64-unknown-linux-gnu --release
+RUN rm -rf src
+# end workaround
+
 COPY . .
 RUN cargo build --target x86_64-unknown-linux-gnu --release --bins
 

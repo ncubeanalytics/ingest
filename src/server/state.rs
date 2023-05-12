@@ -6,7 +6,11 @@
 // use tokio::sync::RwLock;
 // use tracing::{error, trace};
 
-use crate::config::HeaderNames;
+use std::collections::HashMap;
+
+use pyo3::{Py, PyAny};
+
+use crate::config::{HeaderNames, SchemaConfig};
 // use crate::error::{Error, Result};
 use crate::kafka::Kafka;
 
@@ -17,15 +21,30 @@ use crate::kafka::Kafka;
 pub struct ServerState {
     pub kafka: Kafka,
     pub header_names: HeaderNames,
+    pub default_schema_config: SchemaConfig,
+    pub schema_configs: HashMap<String, SchemaConfig>,
+    pub default_python_processor: Option<Py<PyAny>>,
+    pub python_processors: HashMap<String, Py<PyAny>>,
     // ws_connections: RwLock<HashSet<Addr<WSHandler>>>,
     // accept_ws: AtomicBool,
 }
 
 impl ServerState {
-    pub fn new(kafka: Kafka, header_names: HeaderNames) -> Self {
+    pub fn new(
+        kafka: Kafka,
+        header_names: HeaderNames,
+        default_schema_config: SchemaConfig,
+        schema_configs: HashMap<String, SchemaConfig>,
+        default_python_processor: Option<Py<PyAny>>,
+        python_processors: HashMap<String, Py<PyAny>>,
+    ) -> Self {
         Self {
             kafka,
             header_names,
+            default_schema_config,
+            schema_configs,
+            default_python_processor,
+            python_processors,
             // ws_connections: RwLock::new(HashSet::with_capacity(DEFAULT_WS_CAP)),
             // accept_ws: AtomicBool::new(true),
         }

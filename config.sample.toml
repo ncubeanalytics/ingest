@@ -1,7 +1,6 @@
+[service]
 # local address to bind the service to
 addr = '127.0.0.1:8088'
-# prefix used for tenant topics
-destination_topic = 'events'
 
 [headers]
 # configure kafka header names
@@ -19,3 +18,21 @@ fmt_json = false
 [librdkafka_secrets]
 # the sasl.password secret is read from a file
 sasl_password_path = "/path/to/sasl_password"
+
+[service.default_schema_config]
+destination_topic = 'events'
+content_type = "application/jsonlines"
+forward_request_url = false
+forward_request_http_headers = false
+response_status = 200
+allowed_methods = ["POST"]
+
+
+[[service.schema_config]]
+schema_id = "1"
+content_type = "application/json"
+forward_request_url = true
+forward_request_http_headers = true
+response_status = 200
+python_module_search_path = "src"
+python_request_processor = "webhook.mailgun:MailgunProcessor"

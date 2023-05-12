@@ -7,7 +7,7 @@ Works through HTTP and WebSockets.
 
 ## Clone
 This repo uses git submodules, so to get all the code use:
-```
+```sh
 git clone --recurse-submodules git@gitlab.com:n-cube/ingest.git
 
 # or
@@ -21,12 +21,12 @@ This project has some private git dependencies which are vendored
 in the `vendor` dir using git submodules.
 
 To fetch them:
-```
+```sh
 git submodule update --init --recursive
 ```
 
 To update them:
-```
+```sh
 git submodule update --remote --init --recursive
 ```
 
@@ -39,17 +39,17 @@ Check [config.sample.toml](./config.sample.toml)
 To run **integration** tests, you will need a kafka broker.
 
 You can start a broker with docker compose:
-```
+```sh
 BROKER_HOST=localhost BROKER_PORT=19092 docker-compose up -d
 ```
 
 Run the integration tests:
-```
+```sh
 BROKER_ADDRESS=localhost:19092 cargo test --test server
 ```
 
 Run all tests:
-```
+```sh
 cargo test
 ```
 
@@ -67,12 +67,12 @@ Push it to docker registry
 
 ## Build
 For development:
-```
+```sh
 cargo build
 ```
 
 ## Run
 For development:
-```
+```sh
 cargo run
 ```

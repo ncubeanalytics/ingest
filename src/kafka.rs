@@ -1,6 +1,5 @@
 //! Kafka producer wrapper.
 
-use std::collections::HashMap;
 use std::fs;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -26,13 +25,13 @@ pub struct Kafka(Arc<KafkaInner>);
 
 pub struct KafkaInner {
     producer: FutureProducer,
-    config: Config,
 }
 
 impl Deref for Kafka {
     type Target = KafkaInner;
 
     fn deref(&self) -> &KafkaInner {
+        // XXX: why?
         &self.0
     }
 }
@@ -52,21 +51,18 @@ impl Kafka {
 
         let producer = producer_config.create()?;
 
-        Ok(Self(Arc::new(KafkaInner {
-            producer,
-            config: config.clone(),
-        })))
+        Ok(Self(Arc::new(KafkaInner { producer })))
     }
 
-    pub async fn send(&self, data: Bytes, headers: HashMap<String, String>) -> Result<()> {
+    pub async fn send(&self, data: Bytes, headers: Vec<(&str, &[u8])>, topic: &str) -> Result<()> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
             kafka_headers = kafka_headers.insert(Header {
-                key: &key,
-                value: Some(&val),
+                key,
+                value: Some(val),
             });
         }
-        let record = FutureRecord::to(&self.config.destination_topic)
+        let record = FutureRecord::to(topic)
             .key("")
             // an empty key with partitioner:consistent_random will randomly distribute across
             // the partitions
@@ -80,7 +76,7 @@ impl Kafka {
             .send(record, Timeout::Never)
             .map_err(|(error, _)| error.into())
             .map_ok(|_| {
-                trace!(%self.config.destination_topic, "Message successfully sent to kafka broker");
+                trace!(topic, "Message successfully sent to kafka broker");
                 ()
             })
             .await
@@ -89,7 +85,8 @@ impl Kafka {
     pub async fn send_many(
         &self,
         data: Vec<Bytes>,
-        headers: HashMap<String, String>,
+        headers: Vec<(&str, &[u8])>,
+        topic: &str,
     ) -> Result<()> {
         let mut futures = Vec::with_capacity(data.len());
 
@@ -103,7 +100,7 @@ impl Kafka {
         // such retries happen while taking order into account
         // https://github.com/fede1024/rust-rdkafka/issues/468
         for d in data {
-            futures.push(self.send(d, headers.clone()))
+            futures.push(self.send(d, headers.clone(), topic))
         }
 
         join_all(futures) // XXX: does join_all execute in order?

@@ -1,5 +1,5 @@
-FROM rust:1.69.0-bullseye AS build
-RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3.9-dev -y
+FROM rust:1.73.0-bookworm AS build
+RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3-dev -y
 
 # workaround to cache dependencies compilation
 # https://github.com/rust-lang/cargo/issues/2644#issuecomment-335272535
@@ -16,7 +16,7 @@ RUN rm -rf src
 COPY . .
 RUN cargo build --target x86_64-unknown-linux-gnu --release --bins
 
-FROM debian:bullseye-20230502
+FROM debian:bookworm-20230919
 RUN apt-get update -y && apt-get install ca-certificates -y
 COPY --from=build /usr/src/ingest/target/x86_64-unknown-linux-gnu/release/ingest /usr/local/bin/ingestd
 COPY --from=build /usr/src/ingest/src/python/ /usr/local/src/ingest/python/

@@ -2,13 +2,6 @@
 
 set -e
 
-if [ $# -lt 1 ]; then
-    echo "Usage: ${0} <version>"
-    exit 1
-fi
-
-VERSION=$1
-
 set -Euo pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then
@@ -16,6 +9,8 @@ if [[ "${TRACE-0}" == "1" ]]; then
 fi
 
 cd "$(dirname "$0")"/..
+
+VERSION="${1:-$(cargo pkgid | cut -d@ -f2)}"
 
 export DOCKER_BUILDKIT=1
 

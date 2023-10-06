@@ -33,6 +33,11 @@ pub async fn handle(
     let mut response_status = schema_config.response_status;
     let mut response_headers: Vec<(String, String)> = Vec::new();
     let mut response_body: Vec<u8> = b"".to_vec();
+    // XXX: read body in chunks
+    // feed chunks to python process function
+    // make configurable whether body will be passed to python or just request head
+    // make configurable on which request method python processor will be invoked
+    // let python processor request body if it needs it
     let mut should_forward = true;
     if let Some(python_processor) = state
         .python_processors
@@ -174,11 +179,14 @@ pub async fn forward(
             .unwrap_or(ContentType::Json)
     };
 
+    // XXX: read chunks, produce newline delimited new chunks
     let data = match content_type {
         ContentType::Jsonlines => split_newlines(body),
         ContentType::Json => vec![body],
     };
     tracing::Span::current().record("content_type", tracing::field::display(content_type));
     tracing::Span::current().record("message_count", data.len());
+    // XXX: forward to kafka asynchronously in the chunk producing loop, wait for delivery of
+    // everything at the end
     forward_to_kafka(data, headers, kafka, &schema_config.destination_topic).await
 }

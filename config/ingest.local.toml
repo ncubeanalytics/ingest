@@ -1,0 +1,30 @@
+[service]
+addr = "127.0.0.1:8088"
+destination_topic = "test_ingest"
+python_plugin_src_dir = "src/python"
+
+[headers]
+schema_id = "ncube-ingest-schema-id"
+ip = "ncube-ingest-ip"
+
+[logging]
+fmt_json = false
+
+[librdkafka_config]
+"bootstrap.servers" = "localhost:9092"
+
+[service.default_schema_config]
+destination_topic = 'test'
+content_type = "application/jsonlines"
+forward_request_url = false
+forward_request_http_headers = false
+response_status = 200
+allowed_methods = ["POST"]
+
+[[service.schema_config]]
+schema_id = "1"
+content_type = "application/json"
+forward_request_url = true
+forward_request_http_headers = true
+response_status = 200
+python_request_processor = "python_processors:StaticProcessor"

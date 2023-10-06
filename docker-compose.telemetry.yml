@@ -1,0 +1,36 @@
+services:
+    otel-collector:
+        image: otel/opentelemetry-collector-contrib
+        volumes:
+            - ./config/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+        ports:
+            - 1777:1777 # pprof extension, http://localhost:1777/debug/pprof/
+            - 8888:8888 # collector metrics, http://localhost:8888/metrics
+            - 8889:8889 # Prometheus exporter metrics, http://localhost:8889/metrics
+            - 13133:13133 # health_check extension, http://localhost:13133/
+            - 4317:4317 # OTLP gRPC, receive from host
+            - 55679:55679 # zpages extension, http://localhost:55679/debug/servicez
+
+    jaeger:
+        # https://github.com/jaegertracing/jaeger/blob/main/docker-compose/monitor/docker-compose.yml
+        image: jaegertracing/all-in-one
+        ports:
+            - 16686:16686 # jaeger ui, http://localhost:16686
+            - 14269:14269 # metrics, http://localhost:14269/metrics
+        command: --query.ui-config /etc/jaeger/jaeger-ui.json
+        volumes:
+            - ./config/jaeger-ui.json:/etc/jaeger/jaeger-ui.json
+        environment:
+            - METRICS_STORAGE_TYPE=prometheus
+            - PROMETHEUS_SERVER_URL=http://prometheus:9090
+            - PROMETHEUS_QUERY_SUPPORT_SPANMETRICS_CONNECTOR=true
+            - PROMETHEUS_QUERY_NAMESPACE=span_metrics
+            - PROMETHEUS_QUERY_DURATION_UNIT=ms
+            - PROMETHEUS_QUERY_NORMALIZE_CALLS=true
+            - PROMETHEUS_QUERY_NORMALIZE_DURATION=true
+    prometheus:
+        image: prom/prometheus
+        volumes:
+            - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+        ports:
+            - 9090:9090 # prometheus ui, http://localhost:9090

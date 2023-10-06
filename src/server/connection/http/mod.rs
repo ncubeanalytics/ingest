@@ -3,12 +3,14 @@ use std::ops::Index;
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpRequest, HttpResponse};
 use bytes::Bytes;
+use tracing::{debug_span, instrument};
 
 use split_newlines::split_newlines;
 
-use crate::config::ContentType;
+use crate::config::{ContentType, HeaderNames, SchemaConfig};
 use crate::error::Result;
 use crate::event::forward_to_kafka;
+use crate::kafka::Kafka;
 use crate::python::call_processor_process;
 use crate::server::{get_tenant_id, ServerState};
 
@@ -31,12 +33,13 @@ pub async fn handle(
     let mut response_status = schema_config.response_status;
     let mut response_headers: Vec<(String, String)> = Vec::new();
     let mut response_body: Vec<u8> = b"".to_vec();
-    let mut forward = true;
+    let mut should_forward = true;
     if let Some(python_processor) = state
         .python_processors
         .get(&schema_id)
         .or(state.default_python_processor.as_ref())
     {
+        let _span = debug_span!("python_call", schema_id).entered();
         if let Some((
             py_forward,
             py_response_status_opt,
@@ -53,7 +56,7 @@ pub async fn handle(
                 .as_slice(),
             Vec::from(body.clone()).as_slice(),
         )? {
-            forward = py_forward;
+            should_forward = py_forward;
             if let Some(py_response_status) = py_response_status_opt {
                 response_status = py_response_status;
             }
@@ -73,81 +76,14 @@ pub async fn handle(
         return Ok(HttpResponse::MethodNotAllowed().finish());
     }
 
-    if forward {
-        let conn_info = req.connection_info();
-        let mut headers: Vec<(&str, &[u8])> = vec![
-            (&state.header_names.schema_id, (&schema_id).as_bytes()),
-            (
-                &state.header_names.ip,
-                conn_info.realip_remote_addr().unwrap_or("").as_bytes(), // .to_owned()
-                                                                         // .into(),
-            ),
-            // TODO:
-            //("ncube-ingest-schema-revision".to_owned(), revision_number),
-            // ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
-        ];
-
-        let url: String;
-        if schema_config.forward_request_url {
-            url = req.uri().to_string();
-            headers.push((&state.header_names.http_url, &(url).as_bytes()))
-        }
-
-        let method: String;
-        if schema_config.forward_request_method {
-            method = req.method().to_string();
-            headers.push((&state.header_names.http_method, &(method).as_bytes()))
-        }
-
-        let mut header_keys: Vec<String>;
-        if schema_config.forward_request_http_headers {
-            header_keys = Vec::with_capacity(req.headers().len());
-            for (k, _) in req.headers() {
-                header_keys.push(state.header_names.http_header_prefix.clone() + k.as_str());
-            }
-            for (i, (_, v)) in req.headers().iter().enumerate() {
-                // header_keys.push(state.header_names.http_header_prefix.clone() + k.as_str());
-                let name = header_keys.index(i);
-                headers.push((name, v.as_bytes()))
-            }
-        }
-
-        let content_type = if schema_config.content_type_from_header {
-            if let Some(req_content_type) = req
-                .headers()
-                .get("content-type")
-                .map(|h| h.to_str().ok())
-                .flatten()
-            {
-                match req_content_type {
-                    "application/x-ndjson"
-                    | "application/jsonlines"
-                    | "application/x-jsonlines" => ContentType::Jsonlines,
-                    _ => ContentType::Json,
-                }
-            } else {
-                schema_config
-                    .content_type
-                    .clone()
-                    .unwrap_or(ContentType::Json)
-            }
-        } else {
-            schema_config
-                .content_type
-                .clone()
-                .unwrap_or(ContentType::Json)
-        };
-
-        let data = match content_type {
-            ContentType::Jsonlines => split_newlines(body),
-            ContentType::Json => vec![body],
-        };
-
-        forward_to_kafka(
-            data,
-            headers,
+    if should_forward {
+        forward(
+            req,
+            body,
+            &schema_id,
+            schema_config,
+            &state.header_names,
             state.kafka.clone(),
-            &schema_config.destination_topic,
         )
         .await?;
     }
@@ -156,4 +92,93 @@ pub async fn handle(
         response_builder.append_header(h);
     }
     Ok(response_builder.body(response_body))
+}
+
+#[instrument(
+    level = "debug",
+    skip_all,
+    fields(schema_id, ip_address, content_type, message_count)
+)]
+pub async fn forward(
+    req: HttpRequest,
+    body: Bytes,
+    schema_id: &str,
+    schema_config: &SchemaConfig,
+    header_names: &HeaderNames,
+    kafka: Kafka,
+) -> Result<()> {
+    let conn_info = req.connection_info();
+    let ip_address = conn_info.realip_remote_addr().unwrap_or("");
+    tracing::Span::current().record("ip_address", ip_address);
+
+    let mut headers: Vec<(&str, &[u8])> = vec![
+        (&header_names.schema_id, (&schema_id).as_bytes()),
+        (
+            &header_names.ip,
+            ip_address.as_bytes(), // .to_owned()
+                                   // .into(),
+        ),
+        // TODO:
+        //("ncube-ingest-schema-revision".to_owned(), revision_number),
+        // ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
+    ];
+
+    let url: String;
+    if schema_config.forward_request_url {
+        url = req.uri().to_string();
+        headers.push((&header_names.http_url, &(url).as_bytes()))
+    }
+
+    let method: String;
+    if schema_config.forward_request_method {
+        method = req.method().to_string();
+        headers.push((&header_names.http_method, &(method).as_bytes()))
+    }
+
+    let mut header_keys: Vec<String>;
+    if schema_config.forward_request_http_headers {
+        header_keys = Vec::with_capacity(req.headers().len());
+        for (k, _) in req.headers() {
+            header_keys.push(header_names.http_header_prefix.clone() + k.as_str());
+        }
+        for (i, (_, v)) in req.headers().iter().enumerate() {
+            // header_keys.push(header_names.http_header_prefix.clone() + k.as_str());
+            let name = header_keys.index(i);
+            headers.push((name, v.as_bytes()))
+        }
+    }
+
+    let content_type = if schema_config.content_type_from_header {
+        if let Some(req_content_type) = req
+            .headers()
+            .get("content-type")
+            .map(|h| h.to_str().ok())
+            .flatten()
+        {
+            match req_content_type {
+                "application/x-ndjson" | "application/jsonlines" | "application/x-jsonlines" => {
+                    ContentType::Jsonlines
+                }
+                _ => ContentType::Json,
+            }
+        } else {
+            schema_config
+                .content_type
+                .clone()
+                .unwrap_or(ContentType::Json)
+        }
+    } else {
+        schema_config
+            .content_type
+            .clone()
+            .unwrap_or(ContentType::Json)
+    };
+
+    let data = match content_type {
+        ContentType::Jsonlines => split_newlines(body),
+        ContentType::Json => vec![body],
+    };
+    tracing::Span::current().record("content_type", tracing::field::display(content_type));
+    tracing::Span::current().record("message_count", data.len());
+    forward_to_kafka(data, headers, kafka, &schema_config.destination_topic).await
 }

@@ -13,7 +13,7 @@ class StaticProcessor(RequestProcessor):
 
 class FailingProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
-        raise Exception("wtf")
+        raise Exception("fail")
 
 
 class MirrorGetProcessor(RequestProcessor):

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::net::SocketAddr;
 
 use common::config::CommonConfig;
@@ -34,6 +35,15 @@ pub enum ContentType {
     Json,
     #[serde(rename = "application/jsonlines")]
     Jsonlines,
+}
+
+impl fmt::Display for ContentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContentType::Json => write!(f, "application/json"),
+            ContentType::Jsonlines => write!(f, "application/jsonlines"),
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize)]
@@ -105,6 +115,8 @@ pub struct ServiceConfig {
     pub addr: SocketAddr,
     #[serde(default = "default_keepalive_seconds")]
     pub keepalive_seconds: u64,
+    #[serde(default = "default_http_payload_limit")]
+    pub http_payload_limit: u64,
     #[serde(default = "default_python_plugin_src_dir")]
     pub python_plugin_src_dir: String,
     pub default_schema_config: SchemaConfig,
@@ -131,7 +143,10 @@ impl CommonConfig for Config {
 }
 
 const fn default_keepalive_seconds() -> u64 {
-    60
+    300
+}
+const fn default_http_payload_limit() -> u64 {
+    50 * 1024 * 1024 // 50Mb
 }
 fn default_python_plugin_src_dir() -> String {
     "/usr/local/src/ingest/python/".to_owned()

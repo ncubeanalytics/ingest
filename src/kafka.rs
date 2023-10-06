@@ -13,7 +13,7 @@ use rdkafka::{
     util::Timeout,
     ClientConfig,
 };
-use tracing::{error, trace};
+use tracing::{error, instrument, trace};
 
 use crate::config::Config;
 use crate::error::Result;
@@ -54,6 +54,11 @@ impl Kafka {
         Ok(Self(Arc::new(KafkaInner { producer })))
     }
 
+    #[instrument(
+        level = "trace",
+        name = "send_kafka_message",
+        skip(self, data, headers)
+    )]
     pub async fn send(&self, data: Bytes, headers: Vec<(&str, &[u8])>, topic: &str) -> Result<()> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {

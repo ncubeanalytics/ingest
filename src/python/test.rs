@@ -233,7 +233,7 @@ fn test_processor_failing_abc() {
     let err = instantiate_processor(FAILING_PROCESSOR_ABC, "FailingAbcProcessor").unwrap_err();
 
     let expected_err_str = r#"
-TypeError: Can't instantiate abstract class FailingAbcProcessor with abstract methods process
+TypeError: Can't instantiate abstract class FailingAbcProcessor with abstract method process
 "#
     .trim()
     .to_owned();

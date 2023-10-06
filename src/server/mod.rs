@@ -4,17 +4,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use actix_web::http::Method;
-use actix_web::{
-    dev::{ServerHandle, Service},
-    web, App, HttpRequest, HttpResponse, HttpServer,
-};
+use actix_web::middleware::Condition;
+use actix_web::web::PayloadConfig;
+use actix_web::{dev::ServerHandle, web, App, HttpRequest, HttpResponse, HttpServer};
 use common::config::ConfigError;
-use common::logging;
-use futures::FutureExt;
 use pyo3::{Py, PyAny};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
-use tracing_futures::Instrument;
 use vec1::Vec1;
 
 // pub use connection::ws::WSError;
@@ -183,22 +179,17 @@ impl Server {
 
             App::new()
                 .app_data(state)
-                .wrap_fn(|req, srv| {
-                    // initialize logging for this request
-                    let span = logging::req_span(&req);
-                    let _span_guard = span.enter();
-
-                    debug!("Received new HTTP request");
-
-                    srv.call(req)
-                        .map(|res| {
-                            debug!("Sending back response");
-                            res
-                        })
-                        .in_current_span()
-                })
+                .wrap(tracing_actix_web::TracingLogger::default())
+                .wrap(Condition::new(
+                    config.logging.otel_metrics,
+                    actix_web_opentelemetry::RequestMetrics::default(),
+                ))
                 .service(
-                    web::resource("/{schema_id}").route(web::route().to(connection::http::handle)),
+                    web::resource("/{schema_id}")
+                        .app_data(PayloadConfig::new(
+                            config.service.http_payload_limit as usize,
+                        ))
+                        .route(web::route().to(connection::http::handle)),
                 )
                 // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
                 .default_service(web::route().to(|| HttpResponse::NotFound()))

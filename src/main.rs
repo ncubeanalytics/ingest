@@ -7,7 +7,12 @@ use ingest::{error::Result, Config, Server};
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = Config::load()?;
-    common::logging::init(&config.logging)?;
+    let _logging = common::logging::Logging::init(
+        config.logging.clone(),
+        ingest::PKG_NAME,
+        ingest::PKG_VERSION,
+        false,
+    )?;
     debug!("Config: {:?}", config);
 
     info!("Starting server...");

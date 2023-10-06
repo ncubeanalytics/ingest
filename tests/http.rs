@@ -3,7 +3,17 @@ use reqwest::{Client, Method, Response, StatusCode};
 use ingest::{error::Result as IResult, Config, Server};
 
 async fn start_server(config: serde_json::Value) -> IResult<Server> {
-    let _ = common::logging::init(&common::logging::LoggingConfig { fmt_json: false });
+    let _ = common::logging::Logging::init(
+        common::logging::LoggingConfig {
+            fmt_json: false,
+            console: true,
+            otel_metrics: false,
+            otel_tracing: false,
+        },
+        "test",
+        "test",
+        false,
+    );
     let config: Config = serde_json::from_value(config).unwrap();
     Server::start(config).await
 }

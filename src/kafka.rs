@@ -7,6 +7,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::TryFutureExt;
+use rdkafka::error::KafkaError;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     producer::{FutureProducer, FutureRecord, Producer},
@@ -59,12 +60,17 @@ impl Kafka {
         name = "send_kafka_message",
         skip(self, data, headers)
     )]
-    pub async fn send(&self, data: Bytes, headers: Vec<(&str, &[u8])>, topic: &str) -> Result<()> {
+    pub async fn send(
+        &self,
+        data: Bytes,
+        headers: Vec<(String, Bytes)>,
+        topic: &str,
+    ) -> std::result::Result<(), KafkaError> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
             kafka_headers = kafka_headers.insert(Header {
-                key,
-                value: Some(val),
+                key: &key,
+                value: Some(val.as_ref()),
             });
         }
         let record = FutureRecord::to(topic)
@@ -87,12 +93,13 @@ impl Kafka {
             .await
     }
 
+    #[allow(dead_code)]
     pub async fn send_many(
         &self,
         data: Vec<Bytes>,
-        headers: Vec<(&str, &[u8])>,
+        headers: Vec<(String, Bytes)>,
         topic: &str,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), KafkaError> {
         let mut futures = Vec::with_capacity(data.len());
 
         // sending events in order can be configured,
@@ -111,7 +118,7 @@ impl Kafka {
         join_all(futures) // XXX: does join_all execute in order?
             .await
             .into_iter()
-            .collect::<Result<Vec<()>>>()?;
+            .collect::<std::result::Result<Vec<()>, KafkaError>>()?;
         Ok(())
     }
 

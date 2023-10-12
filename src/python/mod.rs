@@ -25,43 +25,70 @@ pub fn import_and_call_callable(module: &str, callable: &str) -> PyResult<Py<PyA
     })
 }
 
+#[derive(Debug)]
+// XXX: expose this struct directly to python instead of converting
+pub struct ProcessorResponse {
+    pub forward: bool,
+    pub response_status: Option<u16>,
+    pub response_headers: Option<Vec<(String, String)>>,
+    pub response_body: Option<Vec<u8>>,
+}
+
+fn marshal_response(py: Python, response: Py<PyAny>) -> PyResult<ProcessorResponse> {
+    let forward: bool = response.getattr(py, intern!(py, "forward"))?.extract(py)?;
+    let response_status: Option<u16> = response
+        .getattr(py, intern!(py, "status_code"))?
+        .extract(py)?;
+    let response_headers: Option<Vec<(String, String)>> =
+        response.getattr(py, intern!(py, "headers"))?.extract(py)?;
+    let response_body: Option<Vec<u8>> = response.getattr(py, intern!(py, "body"))?.extract(py)?;
+    Ok(ProcessorResponse {
+        forward,
+        response_status,
+        response_headers,
+        response_body,
+    })
+}
+
+pub fn call_processor_process_head(
+    processor: &Py<PyAny>,
+    url: &str,
+    method: &str,
+    headers: &[(&str, &str)],
+) -> PyResult<Option<ProcessorResponse>> {
+    Python::with_gil(|py| {
+        let response_opt: Option<Py<PyAny>> = processor
+            .as_ref(py)
+            .call_method1(
+                intern!(py, "_RequestProcessor__process_head"),
+                (url, method, headers.to_vec()),
+            )?
+            .extract()?;
+        if let Some(response) = response_opt {
+            Ok(Some(marshal_response(py, response)?))
+        } else {
+            Ok(None)
+        }
+    })
+}
+
 pub fn call_processor_process(
     processor: &Py<PyAny>,
     url: &str,
     method: &str,
     headers: &[(&str, &str)],
     body: &[u8],
-) -> PyResult<
-    Option<(
-        bool,
-        Option<u16>,
-        Option<Vec<(String, String)>>,
-        Option<Vec<u8>>,
-    )>,
-> {
+) -> PyResult<Option<ProcessorResponse>> {
     Python::with_gil(|py| {
         let response_opt: Option<Py<PyAny>> = processor
             .as_ref(py)
             .call_method1(
                 intern!(py, "_RequestProcessor__process"),
                 (url, method, headers.to_vec(), body),
-            )? // ΧΧΧ: pass request
+            )?
             .extract()?;
         if let Some(response) = response_opt {
-            let forward: bool = response.getattr(py, intern!(py, "forward"))?.extract(py)?;
-            let response_status_opt: Option<u16> = response
-                .getattr(py, intern!(py, "status_code"))?
-                .extract(py)?;
-            let response_headers_opt: Option<Vec<(String, String)>> =
-                response.getattr(py, intern!(py, "headers"))?.extract(py)?;
-            let response_body_opt: Option<Vec<u8>> =
-                response.getattr(py, intern!(py, "body"))?.extract(py)?;
-            Ok(Some((
-                forward,
-                response_status_opt,
-                response_headers_opt,
-                response_body_opt,
-            )))
+            Ok(Some(marshal_response(py, response)?))
         } else {
             Ok(None)
         }

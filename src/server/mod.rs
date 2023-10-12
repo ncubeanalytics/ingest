@@ -16,7 +16,7 @@ use vec1::Vec1;
 // pub use connection::ws::WSError;
 use state::ServerState;
 
-use crate::config::SchemaConfig;
+use crate::config::{PythonProcessorConfig, SchemaConfig};
 use crate::python::{import_and_call_callable, init_python};
 use crate::{error::Error, error::Result, kafka::Kafka, Config};
 
@@ -31,63 +31,43 @@ pub struct Server {
     bound_addrs: Vec<SocketAddr>,
 }
 
-fn validate_convert_method(s: String) -> std::result::Result<String, String> {
+fn validate_convert_method(s: &str) -> std::result::Result<String, String> {
     let m = s.to_ascii_uppercase();
     Method::from_str(&m)
         .map(|_| m)
         .map_err(|_| format!("{} is not a valid http method", s))
 }
 
+fn validate_convert_methods(methods: &[String]) -> std::result::Result<Vec1<String>, String> {
+    let mut methods_cleaned: Vec<String> = vec![];
+    for method in methods {
+        methods_cleaned.push(validate_convert_method(method)?)
+    }
+    methods_cleaned.sort();
+    methods_cleaned.dedup();
+    Ok(Vec1::try_from_vec(methods_cleaned).unwrap())
+}
+
 impl Server {
     pub async fn start(config: Config) -> Result<Self> {
         let mut schema_configs: HashMap<String, SchemaConfig> =
             HashMap::with_capacity(config.service.schema_config.len());
-        let mut python_processors: HashMap<String, Py<PyAny>> =
-            HashMap::with_capacity(config.service.schema_config.len());
+        let mut python_processor_resolver =
+            PythonProcessorResolver::new(&config.service.python_plugin_src_dir);
         let mut default_schema_config = config.service.default_schema_config.clone();
-        let mut methods_cleaned: Vec<String> = vec![];
-        for method in default_schema_config.allowed_methods {
-            methods_cleaned
-                .push(validate_convert_method(method).map_err(|s| ConfigError::Invalid(s))?)
-        }
-        default_schema_config.allowed_methods = Vec1::try_from_vec(methods_cleaned).unwrap();
-        let mut python_initialized = false;
+        let methods_cleaned = validate_convert_methods(&default_schema_config.allowed_methods)
+            .map_err(|s| ConfigError::Invalid(s))?;
+        default_schema_config.allowed_methods = methods_cleaned;
 
-        let default_python_processor = if let Some(ref python_callable_path) =
-            default_schema_config.python_request_processor
+        for default_python_processor_config in default_schema_config.python_request_processor.iter()
         {
-            let parts: Vec<&str> = python_callable_path.split(":").collect();
-            if parts.len() != 2 {
-                return Err(Error::from(ConfigError::Invalid(format!(
-                    "Python request processor location should be of the format \
-                                <module-dot-path>:<callable object>, found {} instead",
-                    python_callable_path
-                ))));
-            }
-            if !python_initialized {
-                init_python(&config.service.python_plugin_src_dir)?;
-                python_initialized = true;
-            }
-            debug!(
-                "Instantiating python object from {} ...",
-                python_callable_path
-            );
-            Some(import_and_call_callable(parts[0], parts[1])?)
-        } else {
-            None
-        };
+            python_processor_resolver.add_default(default_python_processor_config)?;
+        }
 
         // construct the full schema configs filling in from default values
         for c in config.service.schema_config.iter() {
             let allowed_methods = if let Some(allowed_methods) = &c.schema_config.allowed_methods {
-                let mut methods_cleaned: Vec<String> = vec![];
-                for method in allowed_methods {
-                    methods_cleaned.push(
-                        validate_convert_method(method.clone())
-                            .map_err(|s| ConfigError::Invalid(s))?,
-                    )
-                }
-                Vec1::try_from_vec(methods_cleaned).unwrap()
+                validate_convert_methods(&allowed_methods).map_err(|s| ConfigError::Invalid(s))?
             } else {
                 default_schema_config.allowed_methods.clone()
             };
@@ -125,11 +105,7 @@ impl Server {
                     .destination_topic
                     .clone()
                     .unwrap_or(default_schema_config.destination_topic.clone()),
-                python_request_processor: c
-                    .schema_config
-                    .python_request_processor
-                    .clone()
-                    .or(default_schema_config.python_request_processor.clone()),
+                python_request_processor: c.schema_config.python_request_processor.clone(),
             };
             if schema_configs
                 .insert(c.schema_id.clone(), schema_config)
@@ -140,25 +116,9 @@ impl Server {
                     c.schema_id
                 ))));
             }
-            if let Some(ref python_callable_path) = c.schema_config.python_request_processor {
-                let parts: Vec<&str> = python_callable_path.split(":").collect();
-                if parts.len() != 2 {
-                    return Err(Error::from(ConfigError::Invalid(format!(
-                        "Python request processor location should be of the format \
-                                    <module-dot-path>:<callable object>, found {} instead",
-                        python_callable_path
-                    ))));
-                }
-                if !python_initialized {
-                    init_python(&config.service.python_plugin_src_dir)?;
-                    python_initialized = true;
-                }
-                debug!(
-                    "Instantiating python object from {} ...",
-                    python_callable_path
-                );
-                let processor_instance = import_and_call_callable(parts[0], parts[1])?;
-                python_processors.insert(c.schema_id.clone(), processor_instance);
+            for schema_python_processor_config in c.schema_config.python_request_processor.iter() {
+                python_processor_resolver
+                    .add_for_schema(&c.schema_id, schema_python_processor_config)?;
             }
         }
 
@@ -169,8 +129,8 @@ impl Server {
             config.headers,
             default_schema_config,
             schema_configs,
-            default_python_processor,
-            python_processors,
+            python_processor_resolver,
+            config.service.max_event_size_bytes,
         ));
         let app_state = state.clone();
 
@@ -187,7 +147,8 @@ impl Server {
                 .service(
                     web::resource("/{schema_id}")
                         .app_data(PayloadConfig::new(
-                            config.service.http_payload_limit as usize,
+                            // XXX: remove when switching to streaming
+                            config.service.max_event_size_bytes as usize,
                         ))
                         .route(web::route().to(connection::http::handle)),
                 )
@@ -240,6 +201,159 @@ impl Server {
 
     pub fn addrs(&self) -> &[SocketAddr] {
         &self.bound_addrs
+    }
+}
+
+pub struct PythonProcessor {
+    processor: Py<PyAny>,
+    pub implements_process_head: bool,
+    pub process_is_blocking: bool,
+    pub process_head_is_blocking: bool,
+}
+
+pub struct PythonProcessorResolver {
+    callable_path_to_processor: HashMap<String, PythonProcessor>,
+    schema_to_processor: HashMap<String, (Option<String>, HashMap<String, String>)>,
+    default_processor: (Option<String>, HashMap<String, String>),
+    python_initialized: bool,
+    python_plugin_src_dir: String,
+}
+
+impl PythonProcessorResolver {
+    fn new(python_plugin_src_dir: &str) -> Self {
+        Self {
+            callable_path_to_processor: HashMap::new(),
+            schema_to_processor: HashMap::new(),
+            default_processor: (None, HashMap::new()),
+            python_initialized: false,
+            python_plugin_src_dir: python_plugin_src_dir.to_owned(),
+        }
+    }
+
+    fn instantiate(&mut self, processor_config: &PythonProcessorConfig) -> Result<String> {
+        let python_callable_path = processor_config.processor.clone();
+        if self
+            .callable_path_to_processor
+            .contains_key(&python_callable_path)
+        {
+            return Ok(python_callable_path);
+        }
+        let parts: Vec<&str> = python_callable_path.split(":").collect();
+        if parts.len() != 2 {
+            return Err(Error::from(ConfigError::Invalid(format!(
+                "Python request processor location should be of the format \
+                                <module-dot-path>:<callable object>, found {} instead",
+                python_callable_path
+            ))));
+        }
+
+        debug!(
+            "Instantiating python object from {} ...",
+            python_callable_path
+        );
+        if !self.python_initialized {
+            init_python(&self.python_plugin_src_dir)?;
+            self.python_initialized = true;
+        }
+        let python_processor = import_and_call_callable(parts[0], parts[1])?;
+        let processor = PythonProcessor {
+            processor: python_processor,
+            implements_process_head: processor_config.implements_process_head,
+            process_is_blocking: processor_config.process_is_blocking,
+            process_head_is_blocking: processor_config.process_head_is_blocking,
+        };
+        self.callable_path_to_processor
+            .insert(python_callable_path.clone(), processor);
+        Ok(python_callable_path)
+    }
+
+    fn add(
+        &mut self,
+        processor_config: &PythonProcessorConfig,
+        schema_id_opt: Option<&str>,
+        // default_and_method_specific: &mut (Option<String>, HashMap<String, String>),
+    ) -> Result<()> {
+        let path = self.instantiate(processor_config)?;
+        let default_and_method_specific = if let Some(schema_id) = schema_id_opt {
+            self.schema_to_processor
+                .entry(schema_id.to_owned())
+                .or_insert((None, HashMap::new()))
+        } else {
+            &mut self.default_processor
+        };
+
+        // if it has methods, validate them and fail if they already exist
+        // if it does not have methods, fail if the default is already set
+        if let Some(methods) = &processor_config.methods {
+            let cleaned_methods =
+                validate_convert_methods(&methods).map_err(|s| ConfigError::Invalid(s))?;
+            for method in cleaned_methods {
+                if default_and_method_specific.1.contains_key(&method) {
+                    return Err(Error::from(ConfigError::Invalid(format!(
+                        "Duplicate method '{}' configured for Python request processor '{}'",
+                        method, path
+                    ))));
+                }
+                default_and_method_specific.1.insert(method, path.clone());
+            }
+        } else {
+            if default_and_method_specific.0.is_some() {
+                return Err(Error::from(ConfigError::Invalid(format!(
+                    "Duplicate Python request processor '{}'",
+                    path
+                ))));
+            }
+            default_and_method_specific.0 = Some(path)
+        }
+        Ok(())
+    }
+
+    fn add_default(&mut self, processor_config: &PythonProcessorConfig) -> Result<()> {
+        match self.add(
+            processor_config,
+            None,
+            // &mut self.default_processor
+        ) {
+            Err(Error::Config(ConfigError::Invalid(s))) => Err(Error::Config(
+                ConfigError::Invalid("Default Python request processor: ".to_owned() + &s),
+            )),
+            r @ Ok(_) => r,
+            r @ Err(_) => r,
+        }
+    }
+    fn add_for_schema(
+        &mut self,
+        schema_id: &str,
+        processor_config: &PythonProcessorConfig,
+    ) -> Result<()> {
+        match self.add(processor_config, Some(schema_id)) {
+            Err(Error::Config(ConfigError::Invalid(s))) => {
+                Err(Error::Config(ConfigError::Invalid(
+                    format!("Python request processor for schema {}: ", schema_id) + &s,
+                )))
+            }
+            r @ Ok(_) => r,
+            r @ Err(_) => r,
+        }
+    }
+
+    fn get(&self, schema_id: &str, method: &str) -> Option<&PythonProcessor> {
+        // first locate schema specific, otherwise default
+        // then locate method specific, otherwise default
+        if let Some((default, method_specific)) = self
+            .schema_to_processor
+            .get(schema_id)
+            .or(Some(&self.default_processor))
+        {
+            if let Some(path) = method_specific.get(method).or(default.as_ref()) {
+                return Some(self.callable_path_to_processor.get(path).expect(&format!(
+                    "Callable path {} does not exist in paths: {:?}",
+                    path,
+                    self.callable_path_to_processor.keys().collect::<Vec<&String>>()
+                )));
+            }
+        }
+        None
     }
 }
 

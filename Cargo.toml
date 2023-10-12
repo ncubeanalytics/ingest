@@ -1,6 +1,6 @@
 [package]
 name = "ingest"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.73.0"
 
@@ -15,6 +15,8 @@ actix-web = "4.4.0"
 #actix-web-actors = "3.0.0"
 tracing = "0.1.37"
 tracing-futures = "0.2.5"
+async-stream = "0.3.5"
+tokio-util = "0.7.9"
 
 [dependencies.vec1]
 version =  "1.10.1"
@@ -47,10 +49,17 @@ features = ["opentelemetry_0_20"]
  version = "0.15.0"
 features = ["metrics"]
 
+[dependencies.serde_json]
+ version = "1.0.107"
+features = ["preserve_order"]
+
 [dependencies.common]
 path = "vendor/common"
 features = ["actix_web"]
 
 [dev-dependencies]
-reqwest = "0.11.20"
 serde_json = "1.0.107"
+
+[dev-dependencies.reqwest]
+version = "0.11.20"
+features = ["stream"]

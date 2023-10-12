@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use common::config::CommonConfig;
 use common::logging::LoggingConfig;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use vec1::{vec1, Vec1};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -29,12 +29,14 @@ impl Default for HeaderNames {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ContentType {
     #[serde(rename = "application/json")]
     Json,
     #[serde(rename = "application/jsonlines")]
     Jsonlines,
+    #[serde(rename = "application/octet-stream")]
+    Binary,
 }
 
 impl fmt::Display for ContentType {
@@ -42,6 +44,7 @@ impl fmt::Display for ContentType {
         match self {
             ContentType::Json => write!(f, "application/json"),
             ContentType::Jsonlines => write!(f, "application/jsonlines"),
+            ContentType::Binary => write!(f, "application/octet-stream"),
         }
     }
 }
@@ -69,8 +72,21 @@ pub struct SchemaConfig {
     #[serde(default = "default_allowed_methods")]
     pub allowed_methods: Vec1<String>,
     pub destination_topic: String,
-    #[serde(default = "default_python_request_processor")]
-    pub python_request_processor: Option<String>,
+    #[serde(default)]
+    pub python_request_processor: Vec<PythonProcessorConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PythonProcessorConfig {
+    #[serde(default)]
+    pub methods: Option<Vec1<String>>,
+    pub processor: String,
+    #[serde(default)]
+    pub implements_process_head: bool,
+    #[serde(default)]
+    pub process_is_blocking: bool,
+    #[serde(default)]
+    pub process_head_is_blocking: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -84,7 +100,7 @@ pub struct PartialSchemaConfig {
     pub response_status: Option<u16>,
     pub allowed_methods: Option<Vec1<String>>,
     pub destination_topic: Option<String>,
-    pub python_request_processor: Option<String>,
+    pub python_request_processor: Vec<PythonProcessorConfig>,
 }
 
 impl Default for PartialSchemaConfig {
@@ -98,7 +114,7 @@ impl Default for PartialSchemaConfig {
             allowed_methods: None,
             response_status: None,
             destination_topic: None,
-            python_request_processor: None,
+            python_request_processor: Vec::new(),
         }
     }
 }
@@ -115,8 +131,8 @@ pub struct ServiceConfig {
     pub addr: SocketAddr,
     #[serde(default = "default_keepalive_seconds")]
     pub keepalive_seconds: u64,
-    #[serde(default = "default_http_payload_limit")]
-    pub http_payload_limit: u64,
+    #[serde(default = "default_max_event_size_bytes")]
+    pub max_event_size_bytes: u64,
     #[serde(default = "default_python_plugin_src_dir")]
     pub python_plugin_src_dir: String,
     pub default_schema_config: SchemaConfig,
@@ -145,8 +161,8 @@ impl CommonConfig for Config {
 const fn default_keepalive_seconds() -> u64 {
     300
 }
-const fn default_http_payload_limit() -> u64 {
-    50 * 1024 * 1024 // 50Mb
+const fn default_max_event_size_bytes() -> u64 {
+    1 * 1024 * 1024 // 1Mb, kafka default and events hubs limit
 }
 fn default_python_plugin_src_dir() -> String {
     "/usr/local/src/ingest/python/".to_owned()
@@ -169,20 +185,6 @@ const fn default_forward_request_method() -> bool {
 const fn default_response_status() -> u16 {
     200
 }
-const fn default_python_request_processor() -> Option<String> {
-    None
-}
 fn default_allowed_methods() -> Vec1<String> {
     vec1!["POST".to_owned()]
 }
-// const fn none_content_type() -> Option<ContentType> {
-//     None
-// }
-//
-// const fn none_response_status() -> Option<u16> {
-//     None
-// }
-//
-// const fn none_bool() -> Option<bool> {
-//     None
-// }

@@ -8,11 +8,10 @@
 
 use std::collections::HashMap;
 
-use pyo3::{Py, PyAny};
-
 use crate::config::{HeaderNames, SchemaConfig};
 // use crate::error::{Error, Result};
 use crate::kafka::Kafka;
+use crate::server::PythonProcessorResolver;
 
 // use super::connection::ws::{WSClose, WSHandler};
 
@@ -23,8 +22,8 @@ pub struct ServerState {
     pub header_names: HeaderNames,
     pub default_schema_config: SchemaConfig,
     pub schema_configs: HashMap<String, SchemaConfig>,
-    pub default_python_processor: Option<Py<PyAny>>,
-    pub python_processors: HashMap<String, Py<PyAny>>,
+    pub python_processor_resolver: PythonProcessorResolver,
+    pub max_event_size_bytes: u64,
     // ws_connections: RwLock<HashSet<Addr<WSHandler>>>,
     // accept_ws: AtomicBool,
 }
@@ -35,16 +34,16 @@ impl ServerState {
         header_names: HeaderNames,
         default_schema_config: SchemaConfig,
         schema_configs: HashMap<String, SchemaConfig>,
-        default_python_processor: Option<Py<PyAny>>,
-        python_processors: HashMap<String, Py<PyAny>>,
+        python_processor_resolver: PythonProcessorResolver,
+        max_event_size_bytes: u64,
     ) -> Self {
         Self {
             kafka,
             header_names,
             default_schema_config,
             schema_configs,
-            default_python_processor,
-            python_processors,
+            python_processor_resolver,
+            max_event_size_bytes,
             // ws_connections: RwLock::new(HashSet::with_capacity(DEFAULT_WS_CAP)),
             // accept_ws: AtomicBool::new(true),
         }

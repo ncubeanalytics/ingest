@@ -1,11 +1,10 @@
-use std::{error::Error as StdError, fmt, io::Error as IOError};
+use std::{error::Error as StdError, fmt, io};
 
 use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use common::config::ConfigError;
 use common::logging::LoggingError;
 use pyo3::PyErr;
 use rdkafka::error::KafkaError;
-use serde::Serialize;
 use tracing::error;
 
 use crate::python::pyerror_with_traceback_string;
@@ -17,12 +16,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     Kafka(KafkaError),
-    IO(IOError),
+    IO(io::Error),
     Logging(LoggingError),
     Config(ConfigError),
-    Python(PyErr), // /// Used when server is shutting down and no more websocket connections
-                   // /// are accepted.
-                   // WSNotAccepted,
+    ActixWeb(actix_web::Error),
+    Python(PyErr),
+    // /// Used when server is shutting down and no more websocket connections
+    // /// are accepted.
+    // WSNotAccepted,
 }
 
 impl fmt::Display for Error {
@@ -35,6 +36,7 @@ impl fmt::Display for Error {
             Logging(e) => write!(f, "Invalid log filter directive: {}", e),
             Config(e) => write!(f, "Configuration error: {}", e),
             Python(e) => write!(f, "Python error:\n{}", pyerror_with_traceback_string(&e)),
+            ActixWeb(e) => write!(f, "Actix-web error:\n{}", e),
             // WSNotAccepted => write!(
             //     f,
             //     "Server shutting down. No more WebSocket connections accepted"
@@ -53,40 +55,27 @@ impl StdError for Error {
             Logging(e) => Some(e),
             Config(e) => Some(e),
             Python(e) => Some(e),
+            ActixWeb(e) => Some(e),
             // WSNotAccepted => None,
         }
     }
 }
 
-#[derive(Serialize)]
-struct JSONError {
-    error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-}
-
-impl From<&Error> for JSONError {
-    fn from(e: &Error) -> JSONError {
+impl ResponseError for Error {
+    fn status_code(&self) -> StatusCode {
         use Error::*;
 
-        let (error, description) = match e {
-            // WSNotAccepted => ("ws_not_accepted".to_string(), Some(e.to_string())),
-
-            // internal server errors should not be converted to JSONError
-            Kafka(_) | IO(_) | Logging(_) | Config(_) | Python(_) => ("".to_string(), None),
-        };
-
-        JSONError { error, description }
+        match self {
+            Kafka(_) | IO(_) | Logging(_) | Config(_) | Python(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            ActixWeb(e) => e.as_response_error().status_code(),
+            // WSNotAccepted => StatusCode::CONFLICT,
+        }
     }
-}
 
-impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         use Error::*;
-
-        let status_code = self.status_code();
-
-        let mut res = HttpResponse::build(status_code);
 
         match self {
             // WSNotAccepted => {
@@ -97,24 +86,16 @@ impl ResponseError for Error {
             //
             //     res.json(JSONError::from(self))
             // }
+            ActixWeb(e) => e.error_response(),
             Kafka(_) | IO(_) | Logging(_) | Config(_) | Python(_) => {
+                let status_code = StatusCode::INTERNAL_SERVER_ERROR;
+                let mut res = HttpResponse::build(status_code);
                 error!(
                     "Sending {} response to client; Internal error: {}",
                     status_code, self
                 );
-
                 res.finish()
             }
-        }
-    }
-
-    fn status_code(&self) -> StatusCode {
-        use Error::*;
-
-        match self {
-            Kafka(_) | IO(_) | Logging(_) | Config(_) | Python(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            } // WSNotAccepted => StatusCode::CONFLICT,
         }
     }
 }
@@ -142,8 +123,8 @@ impl From<KafkaError> for Error {
     }
 }
 
-impl From<IOError> for Error {
-    fn from(e: IOError) -> Error {
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Error {
         Error::IO(e)
     }
 }
@@ -163,5 +144,11 @@ impl From<ConfigError> for Error {
 impl From<PyErr> for Error {
     fn from(e: PyErr) -> Error {
         Error::Python(e)
+    }
+}
+
+impl From<actix_web::Error> for Error {
+    fn from(e: actix_web::Error) -> Error {
+        Error::ActixWeb(e)
     }
 }

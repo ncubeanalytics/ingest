@@ -1,7 +1,7 @@
 use pyo3::types::PyModule;
 use pyo3::{Py, PyAny, PyResult, Python};
 
-use crate::python::{call_processor_process, pyerror_with_traceback_string};
+use crate::python::{call_processor_process, pyerror_with_traceback_string, ProcessorResponse};
 
 use super::init_python;
 
@@ -112,21 +112,19 @@ fn process(
     method: &str,
     headers: &[(&str, &str)],
     body: &[u8],
-) -> PyResult<
-    Option<(
-        bool,
-        Option<u16>,
-        Option<Vec<(String, String)>>,
-        Option<Vec<u8>>,
-    )>,
-> {
+) -> PyResult<Option<ProcessorResponse>> {
     let processor = instantiate_processor(code, name)?;
     call_processor_process(&processor, url, method, headers, body)
 }
 
 #[test]
 fn test_processor_noop() {
-    let (forward, status_code_opt, headers_opt, body_opt) = process(
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
         NOOP_PROCESSOR,
         "NoopProcessor",
         "",
@@ -160,7 +158,12 @@ fn test_processor_none() {
 
 #[test]
 fn test_processor_static() {
-    let (forward, status_code_opt, headers_opt, body_opt) = process(
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
         STATIC_PROCESSOR,
         "StaticProcessor",
         "",
@@ -187,7 +190,12 @@ fn test_processor_static() {
 fn test_processor_arg_using() {
     let url = "https://example.com";
     let method = "POST";
-    let (forward, status_code_opt, headers_opt, body_opt) = process(
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
         ARG_USING_PROCESSOR,
         "ArgUsingProcessor",
         url,
@@ -256,7 +264,7 @@ fn test_processor_failing_process() {
     let expected_err_str = format!(
         r#"
 Traceback (most recent call last):
-  File "{}/src/python/ncube_ingest_plugin/request_processor.py", line 27, in __process
+  File "{}/src/python/ncube_ingest_plugin/request_processor.py", line 31, in __process
     return self.process(url, method, headers, body)
   File "", line 6, in process
   File "", line 8, in fails

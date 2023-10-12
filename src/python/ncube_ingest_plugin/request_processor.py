@@ -20,8 +20,17 @@ class RequestProcessor(ABC):
     ) -> Optional[Response]:
         raise NotImplementedError
 
+    def process_head(
+        self, url: str, method: str, headers: list[tuple[str, str]]
+    ) -> Optional[Response]:
+        return
+
     def __process(
         self, url: str, method: str, headers: list[tuple[str, str]], body: bytes
     ) -> Optional[Response]:
-        # TODO: replace with multiprocessing
         return self.process(url, method, headers, body)
+
+    def __process_head(
+        self, url: str, method: str, headers: list[tuple[str, str]]
+    ) -> Optional[Response]:
+        return self.process_head(url, method, headers)

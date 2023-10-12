@@ -35,4 +35,10 @@ forward_request_url = true
 forward_request_http_headers = true
 response_status = 200
 python_module_search_path = "src"
-python_request_processor = "webhook.mailgun:MailgunProcessor"
+
+[[service.schema_config.python_request_processor]]
+methods = ["GET", "POST"]
+processor = "webhook.mailgun:MailgunProcessor"
+implements_process_head = true
+process_is_blocking = true
+process_head_is_blocking = false

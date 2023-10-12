@@ -61,9 +61,10 @@ To which kafka topic to forward the data
 destination_topic = 'events'
 ```
 
-#### `content_type`
+#### `content_type_from_header`, `content_type`
 
-The data format that data is delivered to the HTTP endpoint. Supported values are:
+The data format that data is delivered to the HTTP endpoint. Is read from the `Content-Type`
+header by default, but can be overriden by config. Supported values are:
 * "application/json" (default)
 * "application/jsonlines"
 

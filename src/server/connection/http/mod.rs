@@ -1,24 +1,29 @@
 use std::ops::Index;
 
+use actix_web::error::{ErrorBadRequest, ErrorPayloadTooLarge, PayloadError};
 use actix_web::http::StatusCode;
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse, ResponseError};
+use async_stream::stream;
 use bytes::Bytes;
-use tracing::{debug_span, instrument};
+use futures::{pin_mut, Stream};
+use tracing::{instrument, trace};
 
-use split_newlines::split_newlines;
+use futures::stream::StreamExt;
+use serde::Serialize;
+use tokio::sync::mpsc;
+use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
+use tokio_util::io::StreamReader;
 
 use crate::config::{ContentType, HeaderNames, SchemaConfig};
-use crate::error::Result;
-use crate::event::forward_to_kafka;
+use crate::error::{Error, Result};
+use crate::event::forward_message_to_kafka;
 use crate::kafka::Kafka;
-use crate::python::call_processor_process;
-use crate::server::{get_tenant_id, ServerState};
-
-mod split_newlines;
+use crate::python::{call_processor_process, call_processor_process_head, ProcessorResponse};
+use crate::server::{get_tenant_id, PythonProcessor, ServerState};
 
 pub async fn handle(
     req: HttpRequest,
-    body: Bytes,
+    mut body_stream: web::Payload,
     path: web::Path<String>,
     state: web::Data<ServerState>,
 ) -> Result<HttpResponse> {
@@ -30,37 +35,40 @@ pub async fn handle(
         .get(&schema_id)
         .unwrap_or(&state.default_schema_config);
 
+    if !schema_config
+        .allowed_methods
+        .contains(&req.method().to_string())
+    {
+        return Ok(HttpResponse::MethodNotAllowed().finish());
+    }
+
     let mut response_status = schema_config.response_status;
     let mut response_headers: Vec<(String, String)> = Vec::new();
-    let mut response_body: Vec<u8> = b"".to_vec();
-    // XXX: read body in chunks
-    // feed chunks to python process function
-    // make configurable whether body will be passed to python or just request head
-    // make configurable on which request method python processor will be invoked
-    // let python processor request body if it needs it
+    let mut response_body_opt: Option<Vec<u8>> = None;
+
     let mut should_forward = true;
+
+    let body_read;
     if let Some(python_processor) = state
-        .python_processors
-        .get(&schema_id)
-        .or(state.default_python_processor.as_ref())
+        .python_processor_resolver
+        .get(&schema_id, &req.method().to_string())
     {
-        let _span = debug_span!("python_call", schema_id).entered();
-        if let Some((
-            py_forward,
-            py_response_status_opt,
-            py_response_headers_opt,
-            py_response_body_opt,
-        )) = call_processor_process(
+        let (r, body_read_) = process_python(
+            &req,
             python_processor,
-            req.uri().to_string().as_str(),
-            &req.method().to_string(),
-            req.headers()
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
-                .collect::<Vec<(&str, &str)>>()
-                .as_slice(),
-            Vec::from(body.clone()).as_slice(),
-        )? {
+            &mut body_stream,
+            state.max_event_size_bytes as usize,
+        )
+        .await?;
+        body_read = body_read_;
+
+        if let Some(ProcessorResponse {
+            forward: py_forward,
+            response_status: py_response_status_opt,
+            response_headers: py_response_headers_opt,
+            response_body: py_response_body_opt,
+        }) = r
+        {
             should_forward = py_forward;
             if let Some(py_response_status) = py_response_status_opt {
                 response_status = py_response_status;
@@ -70,33 +78,184 @@ pub async fn handle(
                 response_headers = py_response_headers;
             }
 
-            if let Some(py_response_body) = py_response_body_opt {
-                response_body = py_response_body;
+            if py_response_body_opt.is_some() {
+                response_body_opt = py_response_body_opt;
             }
         }
-    } else if !schema_config
-        .allowed_methods
-        .contains(&req.method().to_string())
-    {
-        return Ok(HttpResponse::MethodNotAllowed().finish());
+    } else {
+        body_read = Bytes::new();
     }
 
-    if should_forward {
+    let ingest_response = if should_forward {
+        let s = stream! {
+            yield Ok(body_read);
+            while let Some(chunk) = body_stream.next().await {
+                yield chunk;
+            }
+        };
+        pin_mut!(s);
         forward(
             req,
-            body,
+            s,
             &schema_id,
             schema_config,
             &state.header_names,
             state.kafka.clone(),
+            state.max_event_size_bytes as usize,
         )
-        .await?;
+        .await
+    } else {
+        IngestResponse {
+            ingested_count: 0,
+            ingested_bytes: 0,
+            ingested_content_type: ContentType::Binary,
+            error: None,
+        }
+    };
+
+    if let Some(e) = &ingest_response.error {
+        response_status = e.status_code().as_u16();
     }
+
     let mut response_builder = HttpResponse::build(StatusCode::from_u16(response_status).unwrap());
+    // if we have a body, send it, otherwise build a json one. if we build a json one, also set the
+    // content-type header if not set
+    let mut content_type_seen = false;
     for h in response_headers {
+        if h.0.to_lowercase() == "content-type" {
+            content_type_seen = true;
+        }
         response_builder.append_header(h);
     }
+    let response_body = if let Some(response_body) = response_body_opt {
+        response_body
+    } else {
+        if !content_type_seen {
+            response_builder.append_header(("Content-Type", "application/json"));
+        }
+        serde_json::to_vec(&ingest_response).unwrap()
+    };
+
     Ok(response_builder.body(response_body))
+}
+
+#[instrument(level = "debug", skip_all, fields(body_read_size))]
+pub async fn process_python(
+    req: &HttpRequest,
+    python_processor: &PythonProcessor,
+    body_stream: &mut web::Payload,
+    read_max_body_bytes: usize,
+) -> Result<(Option<ProcessorResponse>, Bytes)> {
+    let url = req.uri().to_string();
+    let method = req.method().to_string();
+    let headers = req
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
+        .collect::<Vec<(&str, &str)>>();
+
+    if python_processor.implements_process_head {
+        let res;
+        // use spawn_blocking if blocking
+        // https://docs.rs/actix-rt/latest/actix_rt/task/fn.spawn_blocking.html
+        if python_processor.process_head_is_blocking {
+            res = {
+                let url = url.clone();
+                let method = method.clone();
+                let headers = req.headers().clone();
+                let processor = python_processor.processor.clone();
+
+                tokio::task::spawn_blocking(move || {
+                    call_processor_process_head(
+                        &processor,
+                        url.as_str(),
+                        &method,
+                        headers
+                            .iter()
+                            .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
+                            .collect::<Vec<(&str, &str)>>()
+                            .as_slice(),
+                    )
+                })
+            }
+            .await
+            .unwrap()?;
+        } else {
+            res = call_processor_process_head(
+                &python_processor.processor,
+                url.as_str(),
+                &method,
+                headers.as_slice(),
+            )?;
+        }
+        if let Some(r) = res {
+            return Ok((Some(r), Bytes::new()));
+        }
+    }
+
+    let mut read_body = web::BytesMut::new();
+    let mut remaining = web::BytesMut::new();
+    while let Some(item) = body_stream.next().await {
+        let chunk = item.map_err(|e| Error::from(actix_web::Error::from(e)))?;
+        let read_limit_exceeded = (read_body.len() + chunk.len()) > read_max_body_bytes;
+        if read_limit_exceeded && read_body.len() > 0 {
+            remaining.extend_from_slice(&chunk);
+        } else {
+            read_body.extend_from_slice(&chunk);
+        }
+        if read_limit_exceeded {
+            break;
+        }
+    }
+
+    let res;
+    // use spawn_blocking if blocking
+    // https://docs.rs/actix-rt/latest/actix_rt/task/fn.spawn_blocking.html
+    if python_processor.process_is_blocking {
+        res = {
+            let url = url.clone();
+            let method = method.clone();
+            let headers = req.headers().clone();
+            let processor = python_processor.processor.clone();
+            let body = read_body.clone();
+
+            tokio::task::spawn_blocking(move || {
+                call_processor_process(
+                    &processor,
+                    url.as_str(),
+                    &method,
+                    headers
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
+                        .collect::<Vec<(&str, &str)>>()
+                        .as_slice(),
+                    Vec::from(body).as_slice(),
+                )
+            })
+        }
+        .await
+        .unwrap()?;
+    } else {
+        res = call_processor_process(
+            &python_processor.processor,
+            url.as_str(),
+            &method,
+            headers.as_slice(),
+            Vec::from(read_body.clone()).as_slice(),
+        )?
+    }
+    read_body.extend_from_slice(&remaining);
+    tracing::Span::current().record("body_read_size", read_body.len());
+    Ok((res, read_body.freeze()))
+}
+
+#[derive(Serialize)]
+pub struct IngestResponse {
+    pub ingested_count: u64,
+    pub ingested_bytes: u128,
+    pub ingested_content_type: ContentType,
+    #[serde(skip)]
+    pub error: Option<Error>,
 }
 
 #[instrument(
@@ -106,24 +265,27 @@ pub async fn handle(
 )]
 pub async fn forward(
     req: HttpRequest,
-    body: Bytes,
+    body_stream: impl Stream<Item = std::result::Result<Bytes, PayloadError>>,
     schema_id: &str,
     schema_config: &SchemaConfig,
     header_names: &HeaderNames,
     kafka: Kafka,
-) -> Result<()> {
+    max_event_size_bytes: usize,
+) -> IngestResponse {
     let conn_info = req.connection_info();
     let ip_address = conn_info.realip_remote_addr().unwrap_or("");
     tracing::Span::current().record("ip_address", ip_address);
 
-    let mut headers: Vec<(&str, &[u8])> = vec![
-        (&header_names.schema_id, (&schema_id).as_bytes()),
+    let mut headers: Vec<(String, Bytes)> = vec![
         (
-            &header_names.ip,
-            ip_address.as_bytes(), // .to_owned()
-                                   // .into(),
+            header_names.schema_id.clone(),
+            Bytes::from(schema_id.as_bytes().to_vec()),
         ),
-        // TODO:
+        (
+            header_names.ip.clone(),
+            Bytes::from(ip_address.as_bytes().to_vec()),
+        ),
+        // XXX:
         //("ncube-ingest-schema-revision".to_owned(), revision_number),
         // ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
     ];
@@ -131,13 +293,19 @@ pub async fn forward(
     let url: String;
     if schema_config.forward_request_url {
         url = req.uri().to_string();
-        headers.push((&header_names.http_url, &(url).as_bytes()))
+        headers.push((
+            header_names.http_url.clone(),
+            Bytes::from(url.as_bytes().to_vec()),
+        ))
     }
 
     let method: String;
     if schema_config.forward_request_method {
         method = req.method().to_string();
-        headers.push((&header_names.http_method, &(method).as_bytes()))
+        headers.push((
+            header_names.http_method.clone(),
+            Bytes::from(method.as_bytes().to_vec()),
+        ))
     }
 
     let mut header_keys: Vec<String>;
@@ -149,7 +317,7 @@ pub async fn forward(
         for (i, (_, v)) in req.headers().iter().enumerate() {
             // header_keys.push(header_names.http_header_prefix.clone() + k.as_str());
             let name = header_keys.index(i);
-            headers.push((name, v.as_bytes()))
+            headers.push((name.clone(), Bytes::from(v.as_bytes().to_vec())))
         }
     }
 
@@ -164,7 +332,8 @@ pub async fn forward(
                 "application/x-ndjson" | "application/jsonlines" | "application/x-jsonlines" => {
                     ContentType::Jsonlines
                 }
-                _ => ContentType::Json,
+                "application/json" => ContentType::Json,
+                _ => ContentType::Binary,
             }
         } else {
             schema_config
@@ -179,14 +348,183 @@ pub async fn forward(
             .unwrap_or(ContentType::Json)
     };
 
-    // XXX: read chunks, produce newline delimited new chunks
-    let data = match content_type {
-        ContentType::Jsonlines => split_newlines(body),
-        ContentType::Json => vec![body],
+    tracing::Span::current().record("content_type", tracing::field::display(&content_type));
+    let mut messages_received: u64 = 0;
+    let mut messages_delivered: u64 = 0;
+    let mut bytes_count: u128 = 0;
+    let mut error = None;
+    match content_type {
+        ContentType::Json | ContentType::Binary => {
+            messages_received = 1;
+            tracing::Span::current().record("message_count", messages_received);
+
+            // read the body until done or until it exceeds max_event_size_bytes
+            let mut body = web::BytesMut::new();
+            pin_mut!(body_stream); // needed for iteration
+            while let Some(item) = body_stream.next().await {
+                let chunk = match item {
+                    Err(e) => {
+                        return IngestResponse {
+                            ingested_count: messages_delivered,
+                            ingested_bytes: bytes_count,
+                            ingested_content_type: content_type,
+                            error: Some(Error::from(actix_web::Error::from(e))),
+                        }
+                    }
+                    Ok(item) => item,
+                };
+                body.extend_from_slice(&chunk);
+                if body.len() > max_event_size_bytes {
+                    return IngestResponse {
+                        ingested_count: messages_delivered,
+                        ingested_bytes: bytes_count,
+                        ingested_content_type: content_type,
+                        error: Some(Error::from(ErrorPayloadTooLarge(PayloadError::Overflow))),
+                    };
+                }
+            }
+
+            let body = if let ContentType::Json = content_type {
+                let s = String::from_utf8(body.as_ref().to_vec());
+                match s {
+                    Err(e) => {
+                        return IngestResponse {
+                            ingested_count: messages_delivered,
+                            ingested_bytes: bytes_count,
+                            ingested_content_type: content_type,
+                            error: Some(Error::from(ErrorBadRequest(e))),
+                        };
+                    }
+                    Ok(s) => Bytes::from(s.trim().as_bytes().to_vec()),
+                }
+            } else {
+                body.freeze()
+            };
+            bytes_count = body.len() as u128;
+            match forward_message_to_kafka(body, headers, kafka, &schema_config.destination_topic)
+                .await
+            {
+                Err(e) => {
+                    return IngestResponse {
+                        ingested_count: messages_delivered,
+                        ingested_bytes: bytes_count,
+                        ingested_content_type: content_type,
+                        error: Some(Error::from(e)),
+                    }
+                }
+                Ok(_) => {
+                    messages_delivered += 1;
+                }
+            };
+        }
+        ContentType::Jsonlines => {
+            let (delivered_tx, mut delivered_rx) = mpsc::channel(512);
+
+            pin_mut!(body_stream);
+            // convert the bytes stream into an async read and use line codec framing to turn that
+            // into a lines stream
+            // https://docs.rs/tokio-util/latest/tokio_util/io/struct.StreamReader.html
+            // https://docs.rs/tokio/1.32.0/tokio/io/trait.AsyncBufReadExt.html#method.read_until
+
+            let stream_reader = StreamReader::new(
+                body_stream
+                    // StreamReader needs errors to be std::io::Error, so convert them
+                    .map(|result| {
+                        result.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+                    }),
+            );
+
+            let mut newline_stream = FramedRead::new(
+                stream_reader,
+                LinesCodec::new_with_max_length(max_event_size_bytes),
+            );
+
+            let mut newline_stream_done = false;
+
+            loop {
+                tokio::select! {
+                    line_opt = newline_stream.next(), if !newline_stream_done => {
+                        if let Some(line) = line_opt {
+                            match line.map_err(|e| {
+                                return match e {
+                                    LinesCodecError::MaxLineLengthExceeded => {
+                                        Error::from(ErrorPayloadTooLarge(PayloadError::Overflow))
+                                    }
+                                    LinesCodecError::Io(io_error) => Error::from(io_error),
+                                };
+                            }) {
+                                Err(e) => {
+                                    // on error set the current error and stop reading the request
+                                    // stream. don't exit early to give a chance to in-flight
+                                    // produces to finish. exiting is handled in the delivery
+                                    // listener
+                                    error = Some(e);
+                                    newline_stream_done = true;
+                                },
+                                Ok(data) => {
+                                    let data = data.trim();
+                                    if data.len() > 0 {
+                                        messages_received += 1;
+                                        trace!(messages_received, messages_delivered, "JSON received");
+                                        tracing::Span::current().record("message_count", messages_received);
+
+                                        {
+                                            let headers = headers.clone();
+                                            let kafka = kafka.clone();
+                                            let data = Bytes::from(data.as_bytes().to_vec());
+                                            let destination_topic = schema_config.destination_topic.to_owned();
+                                            let delivered_tx = delivered_tx.clone();
+                                            tokio::spawn(async move {
+                                                // XXX: limit spawns up to a number
+                                                // https://users.rust-lang.org/t/tokio-number-of-concurrent-tasks/40450
+                                                // https://github.com/tokio-rs/tokio/discussions/2648
+                                                // https://users.rust-lang.org/t/limited-concurrency-for-future-execution-tokio/87171
+                                                let res =
+                                                    forward_message_to_kafka(data, headers, kafka, &destination_topic)
+                                                        .await;
+                                                let _ = delivered_tx.send(res).await;
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            trace!(messages_received, messages_delivered, "end of JSON lines received");
+                            newline_stream_done = true;
+                            // disables this select branch
+                        }
+                    }
+                    Some(res) = delivered_rx.recv() => {
+                        match res {
+                            Err(e) => {
+                                // on delivery error, set the error (but don't overwrite an error
+                                // already set by a request stream error), and stop waiting for any
+                                // further deliveries
+                                if error.is_none() {
+                                    error = Some(Error::from(e))
+                                }
+                                delivered_rx.close();
+                            },
+                            Ok(data_len) => {
+                                bytes_count += data_len as u128;
+                                messages_delivered += 1;
+                                trace!(messages_received, messages_delivered, "JSON line delivered");
+                                if messages_delivered == messages_received && newline_stream_done {
+                                    delivered_rx.close();
+                                    // close the receiver so that recv() returns None, disabling this select branch
+                                }
+                            }
+                        }
+                    }
+                    else => break,
+                };
+            }
+        }
     };
-    tracing::Span::current().record("content_type", tracing::field::display(content_type));
-    tracing::Span::current().record("message_count", data.len());
-    // XXX: forward to kafka asynchronously in the chunk producing loop, wait for delivery of
-    // everything at the end
-    forward_to_kafka(data, headers, kafka, &schema_config.destination_topic).await
+    IngestResponse {
+        ingested_count: messages_delivered,
+        ingested_bytes: bytes_count,
+        ingested_content_type: content_type,
+        error,
+    }
 }

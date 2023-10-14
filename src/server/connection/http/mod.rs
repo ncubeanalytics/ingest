@@ -470,7 +470,7 @@ pub async fn forward(
                                     newline_stream_done = true;
                                 },
                                 Ok(data) => {
-                                    let data = data.trim();
+                                    let data = data.trim(); // XXX: create new codec that returns bytes, not string
                                     if data.len() > 0 {
                                         messages_received += 1;
                                         trace!(messages_received, messages_delivered, "JSON received");

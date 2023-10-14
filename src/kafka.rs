@@ -78,8 +78,14 @@ impl Kafka {
             // an empty key with partitioner:consistent_random will randomly distribute across
             // the partitions
             // XXX: figure out how to specify key
-            // one option can be the schema id
-            // perhaps sender can accompany the payload with a key as well
+            // options:
+            // 1. support passing the partition key as a header in the POST request
+            // 2. specify it as a json attribute. would need to parse json
+            // 3. how to specify it in newline-delimited json?
+            // 4. support adding it in python request processor?
+            // 5. should not employ partitioning in actix web workers. (cannot. they are given some
+            // kind of connection object before the data is even read). but in general should not
+            // if a client is spamming requests for the same partition, client should switch to streaming
             .payload(data.as_ref())
             .headers(kafka_headers);
 
@@ -125,6 +131,7 @@ impl Kafka {
     pub fn stop(self) {
         trace!("Flushing kafka producer");
 
+        // XXX: should add some timeout
         if let Err(e) = self.producer.flush(Timeout::Never) {
             error!("Flushing kafka producer failed with error {}", e);
         }

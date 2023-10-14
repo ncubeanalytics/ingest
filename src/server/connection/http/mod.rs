@@ -49,6 +49,8 @@ pub async fn handle(
     let mut should_forward = true;
 
     let body_read;
+    // TODO: consider replacing with a custom struct that exposes .read() to python, and at the same
+    // time stores the read bytes and can be later passed as a stream to forward()
     if let Some(python_processor) = state
         .python_processor_resolver
         .get(&schema_id, &req.method().to_string())
@@ -285,10 +287,16 @@ pub async fn forward(
             header_names.ip.clone(),
             Bytes::from(ip_address.as_bytes().to_vec()),
         ),
-        // XXX:
         //("ncube-ingest-schema-revision".to_owned(), revision_number),
         // ("ncube-ingest-tenant-id".to_owned(), tenant_id.to_string()),
     ];
+
+    if schema_config.forward_ingest_version {
+        headers.push((
+            header_names.ingest_version.clone(),
+            Bytes::from(crate::PKG_VERSION),
+        ))
+    }
 
     let url: String;
     if schema_config.forward_request_url {
@@ -469,6 +477,30 @@ pub async fn forward(
                                         tracing::Span::current().record("message_count", messages_received);
 
                                         {
+                                            // XXX: should not have to do all this copying
+                                            // kafka produce should happen in the same task, we should
+                                            // only listen for deliveries possibly somewhere else
+                                            // should probably create a producer version that
+                                            // returns a stream of deliveries
+                                            // and listen to that stream of deliveries
+                                            // only problem is how to deal with queue full
+                                            // if we make send async just to deal with it?
+                                            // should the queue waiting be behind a global lock so
+                                            // that re-enqueues happen in order?
+                                            // should each thread receive a position in the waiting
+                                            // queue so that when the queue is freed, re-sends
+                                            // happen in order
+                                            // also on the delivery stream. the same producer may
+                                            // have several delivery streams? or just one at any time?
+                                            // API could be you turn it on, then all delivery callbacks
+                                            // put results in some queue?
+                                            // and a stream reads that queue
+                                            // does a channel work for this?
+                                            // then you turn it off?
+                                            // what if producer is used by many concurrent tasks,
+                                            // each task wants its own delivery stream
+                                            // so we need to pass some state to the producer send
+                                            // so that it knows where to put the delivery
                                             let headers = headers.clone();
                                             let kafka = kafka.clone();
                                             let data = Bytes::from(data.as_bytes().to_vec());

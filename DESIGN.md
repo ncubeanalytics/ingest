@@ -193,6 +193,10 @@ Azure Event Hubs)
 
 The HTTP keep-alive timeout. Default: 5 minutes.
 
+#### `num_workers`
+
+The number of web workers. Default: number of physical CPUs/
+
 ## Custom behavior with python plugin
 
 It is possible to implement custom handling of HTTP requests beyond the configuration

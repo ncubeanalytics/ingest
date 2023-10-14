@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use actix_web::http::Method;
 use actix_web::middleware::Condition;
-use actix_web::web::PayloadConfig;
 use actix_web::{dev::ServerHandle, web, App, HttpRequest, HttpResponse, HttpServer};
 use common::config::ConfigError;
 use pyo3::{Py, PyAny};
@@ -95,6 +94,10 @@ impl Server {
                     .schema_config
                     .forward_request_http_headers
                     .unwrap_or(default_schema_config.forward_request_http_headers),
+                forward_ingest_version: c
+                    .schema_config
+                    .forward_ingest_version
+                    .unwrap_or(default_schema_config.forward_ingest_version),
                 response_status: c
                     .schema_config
                     .response_status
@@ -145,18 +148,14 @@ impl Server {
                     actix_web_opentelemetry::RequestMetrics::default(),
                 ))
                 .service(
-                    web::resource("/{schema_id}")
-                        .app_data(PayloadConfig::new(
-                            // XXX: remove when switching to streaming
-                            config.service.max_event_size_bytes as usize,
-                        ))
-                        .route(web::route().to(connection::http::handle)),
+                    web::resource("/{schema_id}").route(web::route().to(connection::http::handle)),
                 )
                 // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
                 .default_service(web::route().to(|| HttpResponse::NotFound()))
         })
         .disable_signals()
         .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
+        .workers(config.service.num_workers)
         .bind(&config.service.addr)?;
 
         // in case we bind to any available port

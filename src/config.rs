@@ -15,6 +15,7 @@ pub struct HeaderNames {
     pub http_url: String,
     pub http_method: String,
     pub http_header_prefix: String,
+    pub ingest_version: String,
 }
 
 impl Default for HeaderNames {
@@ -25,6 +26,7 @@ impl Default for HeaderNames {
             http_url: "ncube-ingest-http-url".to_owned(),
             http_method: "ncube-ingest-http-method".to_owned(),
             http_header_prefix: "ncube-ingest-http-header-".to_owned(),
+            ingest_version: "ncube-ingest-version".to_owned(),
         }
     }
 }
@@ -67,6 +69,8 @@ pub struct SchemaConfig {
     pub forward_request_method: bool,
     #[serde(default = "default_forward_request_http_headers")]
     pub forward_request_http_headers: bool,
+    #[serde(default = "default_forward_ingest_version")]
+    pub forward_ingest_version: bool,
     #[serde(default = "default_response_status")]
     pub response_status: u16,
     #[serde(default = "default_allowed_methods")]
@@ -97,6 +101,7 @@ pub struct PartialSchemaConfig {
     pub forward_request_url: Option<bool>,
     pub forward_request_method: Option<bool>,
     pub forward_request_http_headers: Option<bool>,
+    pub forward_ingest_version: Option<bool>,
     pub response_status: Option<u16>,
     pub allowed_methods: Option<Vec1<String>>,
     pub destination_topic: Option<String>,
@@ -111,6 +116,7 @@ impl Default for PartialSchemaConfig {
             forward_request_url: None,
             forward_request_method: None,
             forward_request_http_headers: None,
+            forward_ingest_version: None,
             allowed_methods: None,
             response_status: None,
             destination_topic: None,
@@ -133,6 +139,8 @@ pub struct ServiceConfig {
     pub keepalive_seconds: u64,
     #[serde(default = "default_max_event_size_bytes")]
     pub max_event_size_bytes: u64,
+    #[serde(default = "default_num_workers")]
+    pub num_workers: usize,
     #[serde(default = "default_python_plugin_src_dir")]
     pub python_plugin_src_dir: String,
     pub default_schema_config: SchemaConfig,
@@ -164,6 +172,9 @@ const fn default_keepalive_seconds() -> u64 {
 const fn default_max_event_size_bytes() -> u64 {
     1 * 1024 * 1024 // 1Mb, kafka default and events hubs limit
 }
+fn default_num_workers() -> usize {
+    num_cpus::get_physical()
+}
 fn default_python_plugin_src_dir() -> String {
     "/usr/local/src/ingest/python/".to_owned()
 }
@@ -184,6 +195,9 @@ const fn default_forward_request_method() -> bool {
 }
 const fn default_response_status() -> u16 {
     200
+}
+const fn default_forward_ingest_version() -> bool {
+    true
 }
 fn default_allowed_methods() -> Vec1<String> {
     vec1!["POST".to_owned()]

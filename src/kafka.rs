@@ -1,10 +1,11 @@
 //! Kafka producer wrapper.
 
+use std::collections::HashMap;
 use std::fs;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use common::config::ConfigError;
 use futures::future::join_all;
 use futures::TryFutureExt;
 use rdkafka::error::KafkaError;
@@ -17,7 +18,7 @@ use rdkafka::{
 use tracing::{error, instrument, trace};
 
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Kafka producer wrapper.
 /// Can be cheaply cloned.
@@ -25,34 +26,46 @@ use crate::error::Result;
 pub struct Kafka(Arc<KafkaInner>);
 
 pub struct KafkaInner {
-    producer: FutureProducer,
-}
-
-impl Deref for Kafka {
-    type Target = KafkaInner;
-
-    fn deref(&self) -> &KafkaInner {
-        // XXX: why?
-        &self.0
-    }
+    producers: HashMap<String, FutureProducer>,
 }
 
 impl Kafka {
     pub fn start(config: &Config) -> Result<Kafka> {
-        let mut producer_config = ClientConfig::new();
+        let mut producers: HashMap<String, FutureProducer> = HashMap::new();
+        for librdkafka_config in &config.librdkafka {
+            let mut producer_config = ClientConfig::new();
 
-        for (key, value) in &config.librdkafka_config {
-            producer_config.set(key, value);
+            for (key, value) in &librdkafka_config.config {
+                producer_config.set(key, value);
+            }
+
+            if let Some(sasl_password_path) = &librdkafka_config.secrets.sasl_password_path {
+                let content = fs::read_to_string(sasl_password_path)?;
+                producer_config.set("sasl.password", content);
+            }
+
+            let producer = producer_config.create()?;
+            if let Some(_) = producers.insert(librdkafka_config.name.to_owned(), producer) {
+                return Err(Error::from(ConfigError::Invalid(format!(
+                    "Librdkafka configuration with name '{}' specified more than once",
+                    librdkafka_config.name
+                ))));
+            }
         }
 
-        if let Some(sasl_password_path) = &config.librdkafka_secrets.sasl_password_path {
-            let content = fs::read_to_string(sasl_password_path)?;
-            producer_config.set("sasl.password", content);
-        }
+        Ok(Self(Arc::new(KafkaInner { producers })))
+    }
 
-        let producer = producer_config.create()?;
+    fn get_producer(&self, name: &str) -> &FutureProducer {
+        &self.0.producers[name]
+    }
 
-        Ok(Self(Arc::new(KafkaInner { producer })))
+    pub fn producer_names(&self) -> Vec<&str> {
+        self.0
+            .producers
+            .keys()
+            .map(|s| s.as_str())
+            .collect::<Vec<&str>>()
     }
 
     #[instrument(
@@ -65,6 +78,7 @@ impl Kafka {
         data: Bytes,
         headers: Vec<(String, Bytes)>,
         topic: &str,
+        producer_name: &str,
     ) -> std::result::Result<(), KafkaError> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
@@ -89,7 +103,7 @@ impl Kafka {
             .payload(data.as_ref())
             .headers(kafka_headers);
 
-        self.producer
+        self.get_producer(producer_name)
             .send(record, Timeout::Never)
             .map_err(|(error, _)| error.into())
             .map_ok(|_| {
@@ -105,6 +119,7 @@ impl Kafka {
         data: Vec<Bytes>,
         headers: Vec<(String, Bytes)>,
         topic: &str,
+        producer_name: &str,
     ) -> std::result::Result<(), KafkaError> {
         let mut futures = Vec::with_capacity(data.len());
 
@@ -118,7 +133,7 @@ impl Kafka {
         // such retries happen while taking order into account
         // https://github.com/fede1024/rust-rdkafka/issues/468
         for d in data {
-            futures.push(self.send(d, headers.clone(), topic))
+            futures.push(self.send(d, headers.clone(), topic, producer_name))
         }
 
         join_all(futures) // XXX: does join_all execute in order?
@@ -129,13 +144,15 @@ impl Kafka {
     }
 
     pub fn stop(self) {
-        trace!("Flushing kafka producer");
+        trace!("Flushing kafka producers");
 
-        // XXX: should add some timeout
-        if let Err(e) = self.producer.flush(Timeout::Never) {
-            error!("Flushing kafka producer failed with error {}", e);
+        for (name, producer) in self.0.producers.iter() {
+            // XXX: should add some timeout
+            if let Err(e) = producer.flush(Timeout::Never) {
+                error!("Flushing kafka producer '{}' failed with error {}", name, e);
+            }
         }
 
-        trace!("Done flushing kafka producer");
+        trace!("Done flushing kafka producers");
     }
 }

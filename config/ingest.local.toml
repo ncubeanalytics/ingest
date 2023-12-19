@@ -10,7 +10,7 @@ ip = "ncube-ingest-ip"
 [logging]
 fmt_json = false
 
-[librdkafka_config]
+[librdkafka.config]
 "bootstrap.servers" = "localhost:9092"
 
 [service.default_schema_config]

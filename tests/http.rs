@@ -99,14 +99,33 @@ fn broker_addr() -> String {
 }
 
 fn server_config(service_config: serde_json::Value) -> serde_json::Value {
+    _server_config(service_config, None)
+}
+
+fn _server_config(
+    service_config: serde_json::Value,
+    librdkafka_config_opt: Option<serde_json::Value>,
+) -> serde_json::Value {
     let mut conf = service_config.clone();
     conf["addr"] = serde_json::json!("127.0.0.1:0");
     conf["python_plugin_src_dir"] =
         serde_json::json!(env!("CARGO_MANIFEST_DIR").to_owned() + "/src/python");
+    let librdkafka_config = if let Some(librdkafka_config) = librdkafka_config_opt {
+        librdkafka_config
+    } else {
+        serde_json::json!([{"config": {"bootstrap.servers": broker_addr().as_str()}}])
+    };
     serde_json::json!({
         "service": conf,
-        "librdkafka_config": {"bootstrap.servers": broker_addr().as_str()}
+        "librdkafka" : librdkafka_config
     })
+}
+
+fn server_config_with_librdkafka(
+    service_config: serde_json::Value,
+    librdkafka_config: serde_json::Value,
+) -> serde_json::Value {
+    _server_config(service_config, Some(librdkafka_config))
 }
 
 // language=json
@@ -949,4 +968,151 @@ async fn test_config_python_duplicate_default_for_schema_for_method() {
         r,
         "Python request processor for schema 3: Duplicate method 'POST' configured for Python request processor 'python_processors:StaticProcessor'",
     );
+}
+
+#[tokio::test]
+async fn test_config_unspecified_librdkafka_config_in_default_schema() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "librdkafka_config": "no"
+        }
+    }));
+
+    let r = start_server(config).await;
+    assert_is_config_error(
+        r,
+        "Librdkafka config with name 'no' configured on default schema config not found. Available librdkafka configs: [\"main\"]",
+    );
+}
+
+#[tokio::test]
+async fn test_config_unspecified_librdkafka_config_in_other_schema() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test"
+        },
+        "schema_config": [{
+            "schema_id": "3",
+            "librdkafka_config": "no"
+        }]
+    }));
+
+    let r = start_server(config).await;
+    assert_is_config_error(
+        r,
+        "Librdkafka config with name 'no' configured on schema '3' not found. Available librdkafka configs: [\"main\"]",
+    );
+}
+
+#[tokio::test]
+async fn test_config_missing_librdkafka_config_in_default_schema() {
+    let config = server_config_with_librdkafka(
+        serde_json::json!({
+            "default_schema_config": {
+                "destination_topic": "test"
+            }
+        }),
+        serde_json::json!([
+            {"name": "other", "config": {"bootstrap.servers": broker_addr().as_str()}},
+        ]),
+    );
+
+    let r = start_server(config).await;
+    assert_is_config_error(
+        r,
+        "Librdkafka config with name 'main' configured on default schema config not found. Available librdkafka configs: [\"other\"]",
+    );
+}
+
+#[tokio::test]
+async fn test_config_conflicting_librdkafka_config_names() {
+    let config = server_config_with_librdkafka(
+        serde_json::json!({
+            "default_schema_config": {
+                "destination_topic": "test"
+            }
+        }),
+        serde_json::json!([
+            {"config": {"bootstrap.servers": broker_addr().as_str()}},
+            {"config": {"bootstrap.servers": broker_addr().as_str()}},
+        ]),
+    );
+
+    let r = start_server(config).await;
+    assert_is_config_error(
+        r,
+        "Librdkafka configuration with name 'main' specified more than once",
+    );
+}
+
+#[tokio::test]
+async fn test_config_conflicting_librdkafka_config_explicit_names() {
+    let config = server_config_with_librdkafka(
+        serde_json::json!({
+            "default_schema_config": {
+                "destination_topic": "test"
+            }
+        }),
+        serde_json::json!([
+            {"name": "conf", "config": {"bootstrap.servers": broker_addr().as_str()}},
+            {"name": "conf", "config": {"bootstrap.servers": broker_addr().as_str()}},
+        ]),
+    );
+
+    let r = start_server(config).await;
+    assert_is_config_error(
+        r,
+        "Librdkafka configuration with name 'conf' specified more than once",
+    );
+}
+
+#[tokio::test]
+async fn test_named_librdkafka_config_response_default() {
+    let config = server_config_with_librdkafka(
+        serde_json::json!({
+            "default_schema_config": {
+                "destination_topic": "test",
+                "librdkafka_config": "other",
+            }
+        }),
+        serde_json::json!([
+            {"name": "other", "config": {"bootstrap.servers": broker_addr().as_str()}},
+        ]),
+    );
+
+    let res = request(config, "1", DATA, Method::POST).await.unwrap();
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/json".to_owned(), 1, DATA_LEN)),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_config_second_librdkafka_config_response_default() {
+    let config = server_config_with_librdkafka(
+        serde_json::json!({
+            "default_schema_config": {
+                "destination_topic": "test"
+            },
+            "schema_config": [{
+                "schema_id": "3",
+                "librdkafka_config": "other",
+            }]
+        }),
+        serde_json::json!([
+            {"config": {}},
+            {"name": "other", "config": {"bootstrap.servers": broker_addr().as_str()}},
+        ]),
+    );
+
+    let res = request(config, "3", DATA, Method::POST).await.unwrap();
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/json".to_owned(), 1, DATA_LEN)),
+    )
+    .await;
 }

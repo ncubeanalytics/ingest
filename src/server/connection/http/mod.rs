@@ -409,8 +409,14 @@ pub async fn forward(
                 body.freeze()
             };
             bytes_count = body.len() as u128;
-            match forward_message_to_kafka(body, headers, kafka, &schema_config.destination_topic)
-                .await
+            match forward_message_to_kafka(
+                body,
+                headers,
+                kafka,
+                &schema_config.destination_topic,
+                &schema_config.librdkafka_config,
+            )
+            .await
             {
                 Err(e) => {
                     return IngestResponse {
@@ -505,6 +511,7 @@ pub async fn forward(
                                             let kafka = kafka.clone();
                                             let data = Bytes::from(data.as_bytes().to_vec());
                                             let destination_topic = schema_config.destination_topic.to_owned();
+                                            let librdkafka_config = schema_config.librdkafka_config.to_owned();
                                             let delivered_tx = delivered_tx.clone();
                                             tokio::spawn(async move {
                                                 // XXX: limit spawns up to a number
@@ -512,7 +519,7 @@ pub async fn forward(
                                                 // https://github.com/tokio-rs/tokio/discussions/2648
                                                 // https://users.rust-lang.org/t/limited-concurrency-for-future-execution-tokio/87171
                                                 let res =
-                                                    forward_message_to_kafka(data, headers, kafka, &destination_topic)
+                                                    forward_message_to_kafka(data, headers, kafka, &destination_topic, &librdkafka_config)
                                                         .await;
                                                 let _ = delivered_tx.send(res).await;
                                             });

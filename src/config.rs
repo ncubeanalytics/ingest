@@ -78,6 +78,8 @@ pub struct SchemaConfig {
     pub destination_topic: String,
     #[serde(default)]
     pub python_request_processor: Vec<PythonProcessorConfig>,
+    #[serde(default = "default_librdkafka_config_name")]
+    pub librdkafka_config: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -106,6 +108,7 @@ pub struct PartialSchemaConfig {
     pub allowed_methods: Option<Vec1<String>>,
     pub destination_topic: Option<String>,
     pub python_request_processor: Vec<PythonProcessorConfig>,
+    pub librdkafka_config: Option<String>,
 }
 
 impl Default for PartialSchemaConfig {
@@ -121,6 +124,7 @@ impl Default for PartialSchemaConfig {
             response_status: None,
             destination_topic: None,
             python_request_processor: Vec::new(),
+            librdkafka_config: None,
         }
     }
 }
@@ -148,6 +152,17 @@ pub struct ServiceConfig {
     pub schema_config: Vec<PartialSchemaConfigWithSchemaId>,
 }
 
+#[derive(Clone, Default, Debug, Deserialize)]
+#[serde(default)]
+pub struct LibrdkafkaConfig {
+    #[serde(default = "default_librdkafka_config_name")]
+    pub name: String,
+    #[serde(default)]
+    pub config: HashMap<String, String>,
+    #[serde(default)]
+    pub secrets: KafkaSecrets,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub service: ServiceConfig,
@@ -156,9 +171,7 @@ pub struct Config {
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
-    pub librdkafka_config: HashMap<String, String>,
-    #[serde(default)]
-    pub librdkafka_secrets: KafkaSecrets,
+    pub librdkafka: Vec1<LibrdkafkaConfig>,
 }
 
 impl CommonConfig for Config {
@@ -201,4 +214,7 @@ const fn default_forward_ingest_version() -> bool {
 }
 fn default_allowed_methods() -> Vec1<String> {
     vec1!["POST".to_owned()]
+}
+fn default_librdkafka_config_name() -> String {
+    "main".to_owned()
 }

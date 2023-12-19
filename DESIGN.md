@@ -176,7 +176,7 @@ http_header_prefix = "ncube-ingest-http-header-"
 All librdKafka settings can be configured
 
 ```toml
-[librdKafka_config]
+[librdkafka.config]
 # accepts any librdKafka configuration value
 "bootstrap.servers" = "localhost:9093"
 ```

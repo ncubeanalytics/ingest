@@ -49,11 +49,21 @@ fn validate_convert_methods(methods: &[String]) -> std::result::Result<Vec1<Stri
 
 impl Server {
     pub async fn start(config: Config) -> Result<Self> {
+        let kafka = Kafka::start(&config)?;
+        let kafka_producer_names = kafka.producer_names();
+
         let mut schema_configs: HashMap<String, SchemaConfig> =
             HashMap::with_capacity(config.service.schema_config.len());
         let mut python_processor_resolver =
             PythonProcessorResolver::new(&config.service.python_plugin_src_dir);
         let mut default_schema_config = config.service.default_schema_config.clone();
+        if !kafka_producer_names.contains(&default_schema_config.librdkafka_config.as_str()) {
+            return Err(Error::from(ConfigError::Invalid(format!(
+                "Librdkafka config with name '{}' configured on default schema config not found. \
+                Available librdkafka configs: {:?}",
+                default_schema_config.librdkafka_config, kafka_producer_names
+            ))));
+        }
         let methods_cleaned = validate_convert_methods(&default_schema_config.allowed_methods)
             .map_err(|s| ConfigError::Invalid(s))?;
         default_schema_config.allowed_methods = methods_cleaned;
@@ -70,6 +80,20 @@ impl Server {
             } else {
                 default_schema_config.allowed_methods.clone()
             };
+            let librdkafka_config =
+                if let Some(librdkafka_config) = &c.schema_config.librdkafka_config {
+                    if !kafka_producer_names.contains(&librdkafka_config.as_str()) {
+                        return Err(Error::from(ConfigError::Invalid(format!(
+                        "Librdkafka config with name '{}' configured on schema '{}' not found. \
+                        Available librdkafka configs: {:?}",
+                        librdkafka_config, c.schema_id, kafka_producer_names
+                    ))));
+                    } else {
+                        librdkafka_config.clone()
+                    }
+                } else {
+                    default_schema_config.librdkafka_config.clone()
+                };
 
             let schema_config = SchemaConfig {
                 content_type_from_header: c
@@ -109,6 +133,7 @@ impl Server {
                     .clone()
                     .unwrap_or(default_schema_config.destination_topic.clone()),
                 python_request_processor: c.schema_config.python_request_processor.clone(),
+                librdkafka_config,
             };
             if schema_configs
                 .insert(c.schema_id.clone(), schema_config)
@@ -124,8 +149,6 @@ impl Server {
                     .add_for_schema(&c.schema_id, schema_python_processor_config)?;
             }
         }
-
-        let kafka = Kafka::start(&config)?;
 
         let state = web::Data::new(ServerState::new(
             kafka.clone(),

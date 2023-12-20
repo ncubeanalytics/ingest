@@ -27,22 +27,21 @@ async fn start_server(config: serde_json::Value) -> IResult<Server> {
 
 async fn request<T: Into<Body>>(
     server_config: serde_json::Value,
-    schema_id: &str,
+    path: &str,
     body: T,
     method: Method,
 ) -> IResult<Response> {
-    Ok(request_with_headers(server_config, schema_id, body, method, Vec::new()).await?)
+    Ok(request_with_headers(server_config, path, body, method, Vec::new()).await?)
 }
 
 async fn request_with_headers<T: Into<Body>>(
     server_config: serde_json::Value,
-    schema_id: &str,
+    path: &str,
     body: T,
     method: Method,
     headers: Vec<(String, String)>,
 ) -> IResult<Response> {
-    let (server, req) =
-        build_request_with_headers(server_config, schema_id, method, headers).await?;
+    let (server, req) = build_request(server_config, path, method, headers).await?;
     let res = req.body(body).send().await.unwrap();
 
     server.kill().await;
@@ -64,8 +63,7 @@ async fn request_with_stream(
     method: Method,
     headers: Vec<(String, String)>,
 ) -> IResult<Response> {
-    let (server, req) =
-        build_request_with_headers(server_config, schema_id, method, headers).await?;
+    let (server, req) = build_request(server_config, schema_id, method, headers).await?;
 
     let s = vec_to_stream(body);
 
@@ -75,9 +73,9 @@ async fn request_with_stream(
     Ok(res)
 }
 
-async fn build_request_with_headers(
+async fn build_request(
     server_config: serde_json::Value,
-    schema_id: &str,
+    path: &str,
     method: Method,
     headers: Vec<(String, String)>,
 ) -> IResult<(Server, RequestBuilder)> {
@@ -86,7 +84,7 @@ async fn build_request_with_headers(
 
     let addr = &server.addrs().first().unwrap().to_string();
 
-    let mut req = client.request(method, format!("http://{}/{}", addr, schema_id));
+    let mut req = client.request(method, format!("http://{}/{}", addr, path));
 
     for (k, v) in headers {
         req = req.header(k, v);
@@ -135,12 +133,14 @@ const DATA_LEN: u128 = DATA.len() as u128;
 async fn assert_ingest_response(
     res: Response,
     status: StatusCode,
-    ingested_opt: Option<(String, u64, u128)>,
+    ingested_opt: Option<(String, u64, u128, String)>,
 ) {
-    let expected_body = if let Some((content_type, ingested_count, ingested_bytes)) = ingested_opt {
+    let expected_body = if let Some((content_type, ingested_count, ingested_bytes, schema_id)) =
+        ingested_opt
+    {
         Some(format!(
-            r#"{{"ingested_count":{},"ingested_bytes":{},"ingested_content_type":"{}"}}"#,
-            ingested_count, ingested_bytes, content_type
+            r#"{{"ingested_count":{},"ingested_bytes":{},"ingested_content_type":"{}","ingested_schema_id":"{}"}}"#,
+            ingested_count, ingested_bytes, content_type, schema_id
         ))
     } else {
         None
@@ -191,7 +191,26 @@ async fn test_response_default() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_response_with_arbitrary_path() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+        }
+    }));
+
+    let res = request(config, "1/stuff/after/the/schema?yes=1", DATA, Method::POST)
+        .await
+        .unwrap();
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -211,7 +230,7 @@ async fn test_response_trim() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, 15)),
+        Some(("application/json".to_owned(), 1, 15, "1".to_owned())),
     )
     .await;
 }
@@ -231,7 +250,12 @@ async fn test_response_binary_no_trim() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/octet-stream".to_owned(), 1, data.len() as u128)),
+        Some((
+            "application/octet-stream".to_owned(),
+            1,
+            data.len() as u128,
+            "1".to_owned(),
+        )),
     )
     .await;
 }
@@ -260,7 +284,7 @@ async fn test_response_content_type_from_request() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, 15)),
+        Some(("application/json".to_owned(), 1, 15, "1".to_owned())),
     )
     .await;
 }
@@ -292,7 +316,7 @@ async fn test_response_content_type_from_request_with_semicolon() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, 15)),
+        Some(("application/json".to_owned(), 1, 15, "1".to_owned())),
     )
     .await;
 }
@@ -322,7 +346,7 @@ async fn test_response_ignore_content_type_from_request() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/octet-stream".to_owned(), 1, 50)),
+        Some(("application/octet-stream".to_owned(), 1, 50, "1".to_owned())),
     )
     .await;
 }
@@ -343,7 +367,7 @@ async fn test_response_customized() {
     assert_ingest_response(
         res,
         StatusCode::CREATED,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -362,7 +386,7 @@ async fn test_response_custom_method() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -395,7 +419,7 @@ async fn test_response_ndjson() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/jsonlines".to_owned(), 2, 28)),
+        Some(("application/jsonlines".to_owned(), 2, 28, "1".to_owned())),
     )
     .await;
 }
@@ -417,7 +441,7 @@ async fn test_response_ndjson_ignore_empty_lines() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/jsonlines".to_owned(), 3, 42)),
+        Some(("application/jsonlines".to_owned(), 3, 42, "1".to_owned())),
     )
     .await;
 }
@@ -439,7 +463,12 @@ async fn test_response_chunked_transfer() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN * 3)),
+        Some((
+            "application/json".to_owned(),
+            1,
+            DATA_LEN * 3,
+            "1".to_owned(),
+        )),
     )
     .await;
 }
@@ -466,7 +495,7 @@ async fn test_response_chunked_transfer_ndjson() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/jsonlines".to_owned(), 3, 33)),
+        Some(("application/jsonlines".to_owned(), 3, 33, "1".to_owned())),
     )
     .await;
 }
@@ -486,7 +515,7 @@ async fn test_response_limit_exceeded() {
     assert_ingest_response(
         res,
         StatusCode::PAYLOAD_TOO_LARGE,
-        Some(("application/json".to_owned(), 0, 0)),
+        Some(("application/json".to_owned(), 0, 0, "1".to_owned())),
     )
     .await;
 }
@@ -514,7 +543,7 @@ async fn test_response_chunked_transfer_limit_exceeded() {
     assert_ingest_response(
         res,
         StatusCode::PAYLOAD_TOO_LARGE,
-        Some(("application/json".to_owned(), 0, 0)),
+        Some(("application/json".to_owned(), 0, 0, "1".to_owned())),
     )
     .await;
 }
@@ -536,7 +565,7 @@ async fn test_response_ndjson_line_limit_exceeded() {
     assert_ingest_response(
         res,
         StatusCode::PAYLOAD_TOO_LARGE,
-        Some(("application/jsonlines".to_owned(), 2, 4)),
+        Some(("application/jsonlines".to_owned(), 2, 4, "1".to_owned())),
     )
     .await;
 }
@@ -565,7 +594,7 @@ async fn test_response_chunked_transfer_ndjson_line_limit_exceeded() {
     assert_ingest_response(
         res,
         StatusCode::PAYLOAD_TOO_LARGE,
-        Some(("application/jsonlines".to_owned(), 2, 4)),
+        Some(("application/jsonlines".to_owned(), 2, 4, "1".to_owned())),
     )
     .await;
 }
@@ -609,6 +638,7 @@ async fn test_response_python_ndjson() {
             "application/jsonlines".to_owned(),
             expected_ingest_count as u64,
             expected_ingest_bytes as u128,
+            "1".to_owned(),
         )),
     )
     .await;
@@ -640,7 +670,7 @@ async fn test_response_schema_specific_config() {
     assert_ingest_response(
         res,
         StatusCode::CREATED,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "2".to_owned())),
     )
     .await;
 
@@ -653,7 +683,7 @@ async fn test_response_schema_specific_config() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -685,7 +715,7 @@ async fn test_response_python_noop_process() {
     assert_ingest_response(
         res,
         StatusCode::CREATED,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -859,7 +889,7 @@ async fn test_response_python_conditional_response() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, 2)),
+        Some(("application/json".to_owned(), 1, 2, "1".to_owned())),
     )
     .await;
 
@@ -902,7 +932,7 @@ async fn test_response_python_specific_method() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, 2)),
+        Some(("application/json".to_owned(), 1, 2, "1".to_owned())),
     )
     .await;
 
@@ -1117,7 +1147,7 @@ async fn test_named_librdkafka_config_response_default() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "1".to_owned())),
     )
     .await;
 }
@@ -1144,7 +1174,7 @@ async fn test_config_second_librdkafka_config_response_default() {
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/json".to_owned(), 1, DATA_LEN)),
+        Some(("application/json".to_owned(), 1, DATA_LEN, "3".to_owned())),
     )
     .await;
 }

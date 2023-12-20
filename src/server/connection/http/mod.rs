@@ -21,14 +21,31 @@ use crate::kafka::Kafka;
 use crate::python::{call_processor_process, call_processor_process_head, ProcessorResponse};
 use crate::server::{get_tenant_id, PythonProcessor, ServerState};
 
+pub async fn handle_with_trailing_path(
+    req: HttpRequest,
+    body_stream: web::Payload,
+    path: web::Path<(String, String)>,
+    state: web::Data<ServerState>,
+) -> Result<HttpResponse> {
+    _handle(req, body_stream, path.into_inner().0, state).await
+}
+
 pub async fn handle(
     req: HttpRequest,
-    mut body_stream: web::Payload,
+    body_stream: web::Payload,
     path: web::Path<String>,
     state: web::Data<ServerState>,
 ) -> Result<HttpResponse> {
+    _handle(req, body_stream, path.into_inner(), state).await
+}
+
+async fn _handle(
+    req: HttpRequest,
+    mut body_stream: web::Payload,
+    schema_id: String,
+    state: web::Data<ServerState>,
+) -> Result<HttpResponse> {
     let _tenant_id = get_tenant_id(&req);
-    let schema_id = path.into_inner();
 
     let schema_config = state
         .schema_configs
@@ -111,6 +128,7 @@ pub async fn handle(
             ingested_count: 0,
             ingested_bytes: 0,
             ingested_content_type: ContentType::Binary,
+            ingested_schema_id: schema_id,
             error: None,
         }
     };
@@ -256,6 +274,7 @@ pub struct IngestResponse {
     pub ingested_count: u64,
     pub ingested_bytes: u128,
     pub ingested_content_type: ContentType,
+    pub ingested_schema_id: String,
     #[serde(skip)]
     pub error: Option<Error>,
 }
@@ -377,6 +396,7 @@ pub async fn forward(
                             ingested_count: messages_delivered,
                             ingested_bytes: bytes_count,
                             ingested_content_type: content_type,
+                            ingested_schema_id: schema_id.to_owned(),
                             error: Some(Error::from(actix_web::Error::from(e))),
                         }
                     }
@@ -388,6 +408,7 @@ pub async fn forward(
                         ingested_count: messages_delivered,
                         ingested_bytes: bytes_count,
                         ingested_content_type: content_type,
+                        ingested_schema_id: schema_id.to_owned(),
                         error: Some(Error::from(ErrorPayloadTooLarge(PayloadError::Overflow))),
                     };
                 }
@@ -401,6 +422,7 @@ pub async fn forward(
                             ingested_count: messages_delivered,
                             ingested_bytes: bytes_count,
                             ingested_content_type: content_type,
+                            ingested_schema_id: schema_id.to_owned(),
                             error: Some(Error::from(ErrorBadRequest(e))),
                         };
                     }
@@ -424,6 +446,7 @@ pub async fn forward(
                         ingested_count: messages_delivered,
                         ingested_bytes: bytes_count,
                         ingested_content_type: content_type,
+                        ingested_schema_id: schema_id.to_owned(),
                         error: Some(Error::from(e)),
                     }
                 }
@@ -565,6 +588,7 @@ pub async fn forward(
         ingested_count: messages_delivered,
         ingested_bytes: bytes_count,
         ingested_content_type: content_type,
+        ingested_schema_id: schema_id.to_owned(),
         error,
     }
 }

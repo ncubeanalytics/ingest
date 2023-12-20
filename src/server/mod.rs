@@ -173,6 +173,10 @@ impl Server {
                 .service(
                     web::resource("/{schema_id}").route(web::route().to(connection::http::handle)),
                 )
+                .service(
+                    web::resource("/{schema_id}/{rest:.*}")
+                        .route(web::route().to(connection::http::handle_with_trailing_path)),
+                )
                 // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
                 .default_service(web::route().to(|| HttpResponse::NotFound()))
         })

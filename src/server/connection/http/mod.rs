@@ -336,7 +336,8 @@ pub async fn forward(
             .map(|h| h.to_str().ok())
             .flatten()
         {
-            match req_content_type {
+            // Content-Type contents defined at https://www.rfc-editor.org/rfc/rfc9110#media.type
+            match req_content_type.split(";").next().unwrap_or("") {
                 "application/x-ndjson" | "application/jsonlines" | "application/x-jsonlines" => {
                     ContentType::Jsonlines
                 }

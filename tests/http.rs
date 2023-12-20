@@ -266,6 +266,38 @@ async fn test_response_content_type_from_request() {
 }
 
 #[tokio::test]
+async fn test_response_content_type_from_request_with_semicolon() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "content_type": "application/octet-stream"
+        }
+    }));
+
+    //language=json
+    let data = "\n\r\t    \t\t\t    \r\r{\"some\":\"data\"}      \t\t\t\r\r\r\n\r     ";
+    // send request with application/json, expect trimming to take place
+    let res = request_with_headers(
+        config,
+        "1",
+        data,
+        Method::POST,
+        vec![(
+            "Content-Type".to_owned(),
+            "application/json; charset=utf-8".to_owned(),
+        )],
+    )
+    .await
+    .unwrap();
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/json".to_owned(), 1, 15)),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_response_ignore_content_type_from_request() {
     let config = server_config(serde_json::json!({
         "default_schema_config": {

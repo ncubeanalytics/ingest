@@ -1,15 +1,8 @@
 #!/bin/bash
 
-set -e
+set -eEuo pipefail
 
-if [ $# -lt 1 ]; then
-    echo "Usage: ${0} <version>"
-    exit 1
-fi
-
-VERSION=$1
-
-set -Euo pipefail
+VERSION="${1:-$(cargo pkgid | cut -d@ -f2)}"
 
 if [[ "${TRACE-0}" == "1" ]]; then
     set -x

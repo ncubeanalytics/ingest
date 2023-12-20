@@ -1,10 +1,8 @@
 #!/bin/bash
 
-set -e
+set -eEuo pipefail
 
-set -Euo pipefail
-
-if [[ "${TRACE-0}" == "1" ]]; then
+if [[ "${TRACE:-0}" == "1" ]]; then
     set -x
 fi
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 - 2023-12-20
+
+### Added
+
+* Support arbitrary trailing path in url after schema id
+
 ## 0.6.0 - 2023-12-20
 
 ### Added

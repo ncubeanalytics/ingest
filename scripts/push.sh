@@ -13,7 +13,7 @@ cd "$(dirname "$0")"/..
 export DOCKER_BUILDKIT=1
 
 IMAGE="ncube-ingest"
-REGISTRY_PATH="docker.io/dtheodor"
+REGISTRY_PATH="ghcr.io/ncubeanalytics"
 FULL_IMAGE="${REGISTRY_PATH}/${IMAGE}:${VERSION}"
 
 echo "## Pushing image ${FULL_IMAGE}"

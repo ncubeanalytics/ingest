@@ -15,25 +15,17 @@ otel_metrics = true
 
 [[librdkafka]]
 name = "main"
-
-[[librdkafka.config]]
+[librdkafka.config]
 # accepts any librdkafka configuration value
 "bootstrap.servers" = "localhost:9093"
-
-[[librdkafka.secrets]]
+[librdkafka.secrets]
 # the sasl.password secret is read from a file
 sasl_password_path = "/path/to/sasl_password"
 
 [[librdkafka]]
 name = "other"
-
-[[librdkafka.config]]
-# accepts any librdkafka configuration value
-"bootstrap.servers" = "localhost:9093"
-
-[[librdkafka.secrets]]
-# the sasl.password secret is read from a file
-sasl_password_path = "/path/to/sasl_password"
+[librdkafka.config]
+"bootstrap.servers" = "localhost:9094"
 
 [service.default_schema_config]
 destination_topic = 'events'

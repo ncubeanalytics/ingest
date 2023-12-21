@@ -10,6 +10,7 @@ ip = "ncube-ingest-ip"
 [logging]
 fmt_json = false
 
+[[librdkafka]]
 [librdkafka.config]
 "bootstrap.servers" = "localhost:9092"
 
@@ -27,4 +28,6 @@ content_type = "application/json"
 forward_request_url = true
 forward_request_http_headers = true
 response_status = 200
-python_request_processor = "python_processors:StaticProcessor"
+
+[[service.schema_config.python_request_processor]]
+processor = "python_processors:StaticProcessor"

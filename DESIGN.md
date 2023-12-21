@@ -10,7 +10,7 @@
   * [Configuration](#configuration)
     * [Schema configuration options](#schema-configuration-options)
     * [Header names](#header-names)
-    * [Kafka librdKafka producer](#kafka-librdkafka-producer)
+    * [librdkafka producer](#librdkafka-producer)
     * [Other service configuration](#other-service-configuration)
   * [Custom behavior with python plugin](#custom-behavior-with-python-plugin)
 <!-- TOC -->
@@ -131,7 +131,7 @@ schema_id = "1"
 
 [[service.schema_config.python_request_processor]]
 methods = ["GET", "POST"]
-processor = "webhook.mailgun:MailgunProcessor"
+processor = "webhook.3rdparty:3rdPartyWebhookProcessor"
 implements_process_head = true
 process_is_blocking = true
 process_head_is_blocking = false
@@ -139,8 +139,8 @@ process_head_is_blocking = false
 
 ##### `python_request_processor.processor`
 
-The import location of a `ncube_ingest_plugin.RequestProcessor` subclass, in the form of
-`python.module.path:module_attribute`
+The import location of a callable with zero arguments that returns a`ncube_ingest_plugin.RequestProcessor`
+subclass. The location has the form of `module.submodule:module_attribute`.
 
 ##### `python_request_processor.methods`
 
@@ -171,14 +171,33 @@ http_method = "ncube-ingest-http-method"
 http_header_prefix = "ncube-ingest-http-header-"
 ```
 
-### Kafka librdKafka producer
+### Librdkafka producer
 
-All librdKafka settings can be configured
+All [librdkafka configuration options](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)
+can be set. Multiple producers with their own configuration and kafka brokers can be instantiated
+and assigned to different schemas. An example with two producers and two brokers:
 
 ```toml
+# configure two librdkafka clients, with explicit names
+[[librdkafka]]
+name = "main"
 [librdkafka.config]
-# accepts any librdKafka configuration value
+# accepts any librdkafka configuration value
 "bootstrap.servers" = "localhost:9093"
+
+[[librdkafka]]
+name = "other"
+[librdkafka.config]
+"bootstrap.servers" = "localhost:9094"
+
+# assign them to specific schemas
+[[service.schema_config]]
+schema_id = "1"
+libdfkafka_config = "main"
+
+[[service.schema_config]]
+schema_id = "2"
+libdfkafka_config = "other"
 ```
 
 ### Other service configuration
@@ -200,8 +219,8 @@ The number of web workers. Default: number of physical CPUs/
 ## Custom behavior with python plugin
 
 It is possible to implement custom handling of HTTP requests beyond the configuration
-options by implementing the `ncube_ingest_plugin.PythonProcessor` interface, which
-receives the full HTTP request and can implement arbitrary request handling to 
+options by implementing the [`ncube_ingest_plugin.RequestProcessor`](src/python/ncube_ingest_plugin)
+interface, which receives the full HTTP request and can implement arbitrary request handling to
 * form the full HTTP response which will be returned to the ingest caller
 * decide whether to forward or ignore data from being forwarded to Kafka
 

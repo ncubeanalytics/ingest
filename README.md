@@ -1,17 +1,14 @@
-# N-Cube ingest service
-N-Cube service for ingesting data from clients.
-This service does no validation or parsing of data and simply forwards everything
-as is in client requests to tenant specific kafka topics.
+# ncube ingest
 
-Works through HTTP and WebSockets.
+HTTP service to ingest data into Kafka. Check [DESIGN.md](DESIGN.md) for more details.
 
 ## Clone
 This repo uses git submodules, so to get all the code use:
 ```sh
-git clone --recurse-submodules git@gitlab.com:n-cube/ingest.git
+git clone --recurse-submodules git@github.com:ncubeanalytics/ingest.git
 
 # or
-git clone git@gitlab.com:n-cube/ingest.git
+git clone git@github.com:ncubeanalytics/ingest.git
 cd ingest
 git submodule update --init --recursive
 ```
@@ -35,15 +32,15 @@ git submodule update --remote --init --recursive
 Check [config.sample.toml](./config.sample.toml)
 
 ## Testing
-#### Integration
-To run **integration** tests, you will need a kafka broker.
+
+The tests are mainly integration tests. To run them you will need a kafka broker.
 
 You can start a broker with docker compose:
 ```sh
 BROKER_HOST=localhost BROKER_PORT=19092 docker-compose up -d
 ```
 
-Run the integration tests:
+Run integration tests only:
 ```sh
 BROKER_ADDRESS=localhost:19092 cargo test --test server
 ```
@@ -51,18 +48,6 @@ BROKER_ADDRESS=localhost:19092 cargo test --test server
 Run all tests:
 ```sh
 cargo test
-```
-
-## Docker
-To create a docker image with a static binary of the ingest service:
-```sh
-./scripts/build.sh $VERSION
-```
-
-Push it to docker registry
-
-```sh
-./scripts/push.sh $VERSION
 ```
 
 ## Build

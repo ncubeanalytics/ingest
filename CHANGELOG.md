@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - 2023-12-27
+
+### Changed
+
+* Pass headers to python as a dict-like object instead of list of tuples
+
 ## 0.7.0 - 2023-12-20
 
 ### Added

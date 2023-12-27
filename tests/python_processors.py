@@ -15,9 +15,11 @@ class FailingProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
         raise Exception("fail")
 
+
 class FailingHeadProcessor(RequestProcessor):
     def process_head(self, url, method, headers):
         raise Exception("head fail")
+
     def process(self, url, method, headers, body):
         return Response(
             forward=True,
@@ -25,6 +27,7 @@ class FailingHeadProcessor(RequestProcessor):
             headers=[("a", "b"), ("c", "d")],
             body=b"body",
         )
+
 
 class HeadOnlyProcessor(RequestProcessor):
     def process_head(self, url, method, headers):
@@ -34,12 +37,15 @@ class HeadOnlyProcessor(RequestProcessor):
             headers=[("q", "w"), ("e", "r")],
             body=b"head",
         )
+
     def process(self, url, method, headers, body):
         raise Exception("fail")
+
 
 class HeadNoopProcessor(RequestProcessor):
     def process_head(self, url, method, headers):
         return
+
     def process(self, url, method, headers, body):
         return Response(
             forward=True,
@@ -47,6 +53,7 @@ class HeadNoopProcessor(RequestProcessor):
             headers=[("a", "s"), ("d", "f")],
             body=b"head empty",
         )
+
 
 class NoopProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
@@ -69,7 +76,27 @@ class MirrorGetProcessor(RequestProcessor):
             return Response(
                 forward=True,
                 status_code=418,
-                headers=headers,
+                headers=list(headers.items()),
                 body=body,
             )
         return Response(forward=True, status_code=200)
+
+
+class ReturnXHeaderProcessor(RequestProcessor):
+    def process_head(self, url, method, headers):
+        val = headers["x-tEst"]
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[("x-test", val)],
+            body=b"",
+        )
+
+    def process(self, url, method, headers, body):
+        val = headers["x-tEst"]
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[("x-test", val)],
+            body=body,
+        )

@@ -951,6 +951,55 @@ async fn test_response_python_specific_method() {
 }
 
 #[tokio::test]
+async fn test_response_python_access_headers() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "python_request_processor":[{"processor": "python_processors:ReturnXHeaderProcessor"}]
+        }
+    }));
+
+    let res = request_with_headers(
+        config,
+        "1",
+        "stuff",
+        Method::POST,
+        vec![("x-tEsT".to_owned(), "1234".to_owned())],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["X-TEST"], "1234");
+}
+
+#[tokio::test]
+async fn test_response_python_access_headers_process_head() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "python_request_processor":[{
+                "processor": "python_processors:ReturnXHeaderProcessor",
+                "implements_process_head": true
+            }]
+        }
+    }));
+
+    let res = request_with_headers(
+        config,
+        "1",
+        "stuff",
+        Method::POST,
+        vec![("x-tEsT".to_owned(), "1234".to_owned())],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["X-TEST"], "1234");
+}
+
+#[tokio::test]
 async fn test_config_python_duplicate_default() {
     let config = server_config(serde_json::json!({
         "default_schema_config": {

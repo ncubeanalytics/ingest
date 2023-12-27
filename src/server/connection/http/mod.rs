@@ -168,11 +168,6 @@ pub async fn process_python(
 ) -> Result<(Option<ProcessorResponse>, Bytes)> {
     let url = req.uri().to_string();
     let method = req.method().to_string();
-    let headers = req
-        .headers()
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
-        .collect::<Vec<(&str, &str)>>();
 
     if python_processor.implements_process_head {
         let res;
@@ -186,16 +181,7 @@ pub async fn process_python(
                 let processor = python_processor.processor.clone();
 
                 tokio::task::spawn_blocking(move || {
-                    call_processor_process_head(
-                        &processor,
-                        url.as_str(),
-                        &method,
-                        headers
-                            .iter()
-                            .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
-                            .collect::<Vec<(&str, &str)>>()
-                            .as_slice(),
-                    )
+                    call_processor_process_head(&processor, url.as_str(), &method, headers)
                 })
             }
             .await
@@ -205,7 +191,7 @@ pub async fn process_python(
                 &python_processor.processor,
                 url.as_str(),
                 &method,
-                headers.as_slice(),
+                req.headers().clone(),
             )?;
         }
         if let Some(r) = res {
@@ -244,11 +230,7 @@ pub async fn process_python(
                     &processor,
                     url.as_str(),
                     &method,
-                    headers
-                        .iter()
-                        .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
-                        .collect::<Vec<(&str, &str)>>()
-                        .as_slice(),
+                    headers,
                     Vec::from(body).as_slice(),
                 )
             })
@@ -260,7 +242,7 @@ pub async fn process_python(
             &python_processor.processor,
             url.as_str(),
             &method,
-            headers.as_slice(),
+            req.headers().clone(),
             Vec::from(read_body.clone()).as_slice(),
         )?
     }

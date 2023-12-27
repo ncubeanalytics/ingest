@@ -1,3 +1,4 @@
+use actix_web::http::header::HeaderMap;
 use pyo3::types::PyModule;
 use pyo3::{Py, PyAny, PyResult, Python};
 
@@ -12,9 +13,9 @@ from ncube_ingest_plugin import RequestProcessor, Response
 class NoopProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
         return Response(
-            forward=False, 
-            status_code=None, 
-            headers=None, 
+            forward=False,
+            status_code=None,
+            headers=None,
             body=None
         )
 
@@ -37,9 +38,9 @@ from ncube_ingest_plugin import RequestProcessor, Response
 class StaticProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
         return Response(
-            forward=False, 
-            status_code=201, 
-            headers=[('a', 'b'), ('c', 'd')], 
+            forward=False,
+            status_code=201,
+            headers=[('a', 'b'), ('c', 'd')],
             body=b'body'
         )
 
@@ -52,10 +53,120 @@ from ncube_ingest_plugin import RequestProcessor, Response
 class ArgUsingProcessor(RequestProcessor):
     def process(self, url, method, headers, body):
         return Response(
-            forward=True, 
-            status_code=200, 
-            headers=[('url', url), ('method', method)] + headers, 
+            forward=True,
+            status_code=200,
+            headers=[('url', url), ('method', method)] + list(headers.items()),
             body=body
+        )
+
+"#;
+
+// language=python
+const HEADERS_GETLIST_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeaderGetListProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        vals = headers.getlist("x-tEsT")
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(f"x-test-{i}", v) for i, v in enumerate(vals)],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_GETITEM_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeaderGetitemProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        val = headers["x-tEsT"]
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(f"x-test", val)],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_GET_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeaderGetProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        val = headers.get("x-tEsT", "notfound")
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(f"x-test", val)],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_CONTAIN_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeadersContainProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        val = "x-tEsT" in headers
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(f"x-test", str(val))],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_LENGTH_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeadersLengthProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        val = len(headers)
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(f"x-test", str(val))],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_ITER_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeadersIterProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=[(k, headers[k]) for k in headers],
+            body=b""
+        )
+
+"#;
+
+// language=python
+const HEADERS_ITEMS_PROCESSOR: &'static str = r#"
+from ncube_ingest_plugin import RequestProcessor, Response
+
+class HeadersItemsProcessor(RequestProcessor):
+    def process(self, url, method, headers, body):
+        return Response(
+            forward=True,
+            status_code=200,
+            headers=list(headers.items()),
+            body=b""
         )
 
 "#;
@@ -114,7 +225,27 @@ fn process(
     body: &[u8],
 ) -> PyResult<Option<ProcessorResponse>> {
     let processor = instantiate_processor(code, name)?;
-    call_processor_process(&processor, url, method, headers, body)
+    let mut h = HeaderMap::with_capacity(headers.len());
+    for (k, v) in headers {
+        h.append(k.parse().unwrap(), v.parse().unwrap());
+    }
+    call_processor_process(&processor, url, method, h, body)
+}
+
+fn _sort<T>(v: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Ord,
+{
+    v.map(|mut v| {
+        v.sort();
+        v
+    })
+}
+
+fn assert_default_response(forward: bool, status_code_opt: Option<u16>, body_opt: Option<Vec<u8>>) {
+    assert_eq!(forward, true);
+    assert_eq!(status_code_opt, Some(200));
+    assert_eq!(body_opt, Some("".to_owned().into_bytes()));
 }
 
 #[test]
@@ -209,15 +340,242 @@ fn test_processor_arg_using() {
     assert_eq!(forward, true);
     assert_eq!(status_code_opt, Some(200));
     assert_eq!(
-        headers_opt,
-        Some(vec![
+        _sort(headers_opt),
+        _sort(Some(vec![
             ("url".to_owned(), url.to_owned()),
             ("method".to_owned(), method.to_owned()),
-            ("A".to_owned(), "B".to_owned()),
-            ("C".to_owned(), "D".to_owned()),
-        ])
+            ("a".to_owned(), "B".to_owned()),
+            ("c".to_owned(), "D".to_owned()),
+        ]))
     );
     assert_eq!(body_opt, Some("body_arg_using".to_owned().into_bytes()));
+}
+
+#[test]
+fn test_processor_headers_getlist() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_GETLIST_PROCESSOR,
+        "HeaderGetListProcessor",
+        url,
+        method,
+        vec![("X-Test", "A"), ("X-Test", "B"), ("X-Test", "C")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![
+            ("x-test-0".to_owned(), "A".to_owned()),
+            ("x-test-1".to_owned(), "B".to_owned()),
+            ("x-test-2".to_owned(), "C".to_owned()),
+        ])
+    );
+}
+
+#[test]
+fn test_processor_headers_getitem() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_GETITEM_PROCESSOR,
+        "HeaderGetitemProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q"), ("X-Test", "W")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![("x-test".to_owned(), "Q".to_owned())])
+    );
+}
+
+#[test]
+fn test_processor_headers_get() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_GET_PROCESSOR,
+        "HeaderGetProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q"), ("X-Test", "W")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![("x-test".to_owned(), "Q".to_owned())])
+    );
+}
+
+#[test]
+fn test_processor_headers_get_default() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_GET_PROCESSOR,
+        "HeaderGetProcessor",
+        url,
+        method,
+        vec![].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![("x-test".to_owned(), "notfound".to_owned())])
+    );
+}
+
+#[test]
+fn test_processor_headers_contain() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_CONTAIN_PROCESSOR,
+        "HeadersContainProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![("x-test".to_owned(), "True".to_owned())])
+    );
+}
+
+#[test]
+fn test_processor_headers_length() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_LENGTH_PROCESSOR,
+        "HeadersLengthProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q"), ("X-TeSt", "W"), ("X-TeSt-2", "E")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        headers_opt,
+        Some(vec![("x-test".to_owned(), "3".to_owned())])
+    );
+}
+
+#[test]
+fn test_processor_headers_iter() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_ITER_PROCESSOR,
+        "HeadersIterProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q"), ("X-TeSt", "W"), ("X-TeSt-2", "E")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        _sort(headers_opt),
+        _sort(Some(vec![
+            ("x-test".to_owned(), "Q".to_owned()),
+            ("x-test-2".to_owned(), "E".to_owned()),
+        ]))
+    );
+}
+
+#[test]
+fn test_processor_headers_items() {
+    let url = "https://example.com";
+    let method = "POST";
+    let ProcessorResponse {
+        forward,
+        response_status: status_code_opt,
+        response_headers: headers_opt,
+        response_body: body_opt,
+    } = process(
+        HEADERS_ITEMS_PROCESSOR,
+        "HeadersItemsProcessor",
+        url,
+        method,
+        vec![("X-Test", "Q"), ("X-TeSt", "W"), ("X-TeSt-2", "E")].as_slice(),
+        "".as_bytes(),
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_default_response(forward, status_code_opt, body_opt);
+    assert_eq!(
+        _sort(headers_opt),
+        _sort(Some(vec![
+            ("x-test".to_owned(), "Q".to_owned()),
+            ("x-test".to_owned(), "W".to_owned()),
+            ("x-test-2".to_owned(), "E".to_owned()),
+        ]))
+    );
 }
 
 #[test]

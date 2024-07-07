@@ -1,4 +1,4 @@
-FROM rust:1.73.0-bookworm AS build
+FROM rust:1.78.0-slim-bookworm AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3-dev -y
@@ -18,7 +18,7 @@ RUN rm -rf src
 COPY . .
 RUN cargo build --target x86_64-unknown-linux-gnu --release --bins
 
-FROM debian:bookworm-20230919
+FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 

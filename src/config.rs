@@ -138,7 +138,7 @@ pub struct PartialSchemaConfigWithSchemaId {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ServiceConfig {
-    pub addr: SocketAddr,
+    pub address: SocketAddr,
     #[serde(default = "default_keepalive_seconds")]
     pub keepalive_seconds: u64,
     #[serde(default = "default_max_event_size_bytes")]

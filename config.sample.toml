@@ -37,7 +37,7 @@ allowed_methods = ["POST"]
 
 
 [[service.schema_config]]
-schema_id = "1"
+schema_id = "key"
 content_type = "application/json"
 forward_request_url = true
 forward_request_http_headers = true
@@ -47,7 +47,7 @@ librdkafka_config = "other"
 
 [[service.schema_config.python_request_processor]]
 methods = ["GET", "POST"]
-processor = "webhook.mailgun:MailgunProcessor"
+processor = "webhook.service_x:ServiceXProcessor"
 implements_process_head = true
 process_is_blocking = true
 process_head_is_blocking = false

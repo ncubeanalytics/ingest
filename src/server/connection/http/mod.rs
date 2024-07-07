@@ -19,7 +19,7 @@ use crate::error::{Error, Result};
 use crate::event::forward_message_to_kafka;
 use crate::kafka::Kafka;
 use crate::python::{call_processor_process, call_processor_process_head, ProcessorResponse};
-use crate::server::{get_tenant_id, PythonProcessor, ServerState};
+use crate::server::{PythonProcessor, ServerState};
 
 pub async fn handle_with_trailing_path(
     req: HttpRequest,
@@ -45,7 +45,8 @@ async fn _handle(
     schema_id: String,
     state: web::Data<ServerState>,
 ) -> Result<HttpResponse> {
-    let _tenant_id = get_tenant_id(&req);
+    // do something with tenant from authentication or config if/when multitenant
+    //let _tenant_id = get_tenant_id(&req);
 
     let schema_config = state
         .schema_configs

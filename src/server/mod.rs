@@ -183,7 +183,7 @@ impl Server {
         .disable_signals()
         .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
         .workers(config.service.num_workers)
-        .bind(&config.service.addr)?;
+        .bind(&config.service.address)?;
 
         // in case we bind to any available port
         let bound_addrs = http_server.addrs();
@@ -381,9 +381,4 @@ impl PythonProcessorResolver {
         }
         None
     }
-}
-
-fn get_tenant_id(_req: &HttpRequest) -> i64 {
-    // TODO: figure out what this should be. (was: implement this function when authentication is ready)
-    1
 }

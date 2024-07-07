@@ -259,6 +259,7 @@ pub struct IngestResponse {
     pub ingested_content_type: ContentType,
     pub ingested_schema_id: String,
     #[serde(skip)]
+    // XXX: should figure out how to serialize this to return with the response as "ingest_error": ""
     pub error: Option<Error>,
 }
 

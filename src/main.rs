@@ -4,16 +4,30 @@ use tracing::{debug, info};
 
 use ingest::{error::Result, Config, Server};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let config = Config::load()?;
+    debug!("Config: {:?}", config);
+
+    let _guard = common::logging::Logging::pre_runtime_init(
+        &config.logging,
+        ingest::PKG_NAME,
+        ingest::PKG_VERSION,
+    )?;
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(run(config))
+}
+
+async fn run(config: Config) -> Result<()> {
     let _logging = common::logging::Logging::init(
         config.logging.clone(),
         ingest::PKG_NAME,
         ingest::PKG_VERSION,
-        false,
+        common::logging::TokioRuntime::MultiThread,
     )?;
-    debug!("Config: {:?}", config);
 
     info!("Starting server...");
     let server = Server::start(config).await?;

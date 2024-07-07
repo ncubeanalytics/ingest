@@ -170,6 +170,10 @@ impl Server {
                     config.logging.otel_metrics,
                     actix_web_opentelemetry::RequestMetrics::default(),
                 ))
+                .wrap(Condition::new(
+                    config.logging.sentry.enabled,
+                    sentry_actix::Sentry::new(),
+                ))
                 .service(
                     web::resource("/{schema_id}").route(web::route().to(connection::http::handle)),
                 )

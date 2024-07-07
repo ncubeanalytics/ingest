@@ -20,10 +20,11 @@ async fn start_server(config: serde_json::Value) -> IResult<Server> {
             otel_metrics: false,
             otel_tracing: false,
             log_level: "debug".to_string(),
+            sentry: Default::default(),
         },
         "test",
         "test",
-        false,
+        common::logging::TokioRuntime::MultiThread,
     );
     let config: Config = serde_json::from_value(config).unwrap();
     Server::start(config).await

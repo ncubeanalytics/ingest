@@ -1,5 +1,5 @@
 [service]
-addr = "127.0.0.1:8088"
+address = "127.0.0.1:8088"
 destination_topic = "test_ingest"
 python_plugin_src_dir = "src/python"
 

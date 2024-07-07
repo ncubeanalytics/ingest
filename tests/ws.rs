@@ -97,7 +97,7 @@
 //     let mut config = Config::load()?;
 //
 //     // bind to any available port
-//     config.addr = ([127, 0, 0, 1], 0).into();
+//     config.address = ([127, 0, 0, 1], 0).into();
 //
 //     Server::start(config)
 // }

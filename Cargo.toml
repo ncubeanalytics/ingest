@@ -1,66 +1,63 @@
 [package]
 name = "ingest"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
-rust-version = "1.73.0"
+rust-version = "1.78.0"
 
 [dependencies]
-futures = "0.3.28"
-bytes = "1.5.0"
+futures = "0.3.30"
+bytes = "1.6.0"
 json = "0.12.4"
 #actix = "0.10.0"
 #actix-rt = "1.1.1"
 #actix-http = "2.0.0"
-actix-web = "4.4.0"
+actix-web = "4.8.0"
 #actix-web-actors = "3.0.0"
-tracing = "0.1.37"
+tracing = "0.1.40"
 tracing-futures = "0.2.5"
 async-stream = "0.3.5"
-tokio-util = "0.7.9"
+tokio-util = "0.7.11"
 num_cpus = "1.16.0"
 
 [dependencies.vec1]
-version =  "1.10.1"
+version =  "1.12.1"
 features = ["serde"]
 
 [dependencies.serde]
-version = "1.0.188"
+version = "1.0.204"
 features = ["derive"]
 
 [dependencies.tokio]
-version = "1.32.0"
+version = "1.38.0"
 features = ["full"]
 
 [dependencies.tokio-stream]
-version = "0.1.14"
+version = "0.1.15"
 features = ["signal"]
 
 [dependencies.rdkafka]
-version = "0.34.0"
+version = "0.36.2"
 features = ["ssl", "tracing"]
 
 [dependencies.pyo3]
 version = "0.19.2"
 
 [dependencies.tracing-actix-web]
-version = "0.7.7"
+version = "0.7.11"
 features = ["opentelemetry_0_20"]
 
 [dependencies.actix-web-opentelemetry]
- version = "0.15.0"
+ version = "0.18.0"
 features = ["metrics"]
 
 [dependencies.serde_json]
- version = "1.0.107"
+version = "1.0.120"
 features = ["preserve_order"]
 
 [dependencies.common]
 path = "vendor/common"
 features = ["actix_web"]
 
-[dev-dependencies]
-serde_json = "1.0.107"
-
 [dev-dependencies.reqwest]
-version = "0.11.20"
+version = "0.12.5"
 features = ["stream"]

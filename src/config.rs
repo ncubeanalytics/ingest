@@ -95,7 +95,7 @@ pub struct PythonProcessorConfig {
     pub process_head_is_blocking: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct PartialSchemaConfig {
     pub content_type_from_header: Option<bool>,
@@ -109,24 +109,6 @@ pub struct PartialSchemaConfig {
     pub destination_topic: Option<String>,
     pub python_request_processor: Vec<PythonProcessorConfig>,
     pub librdkafka_config: Option<String>,
-}
-
-impl Default for PartialSchemaConfig {
-    fn default() -> PartialSchemaConfig {
-        PartialSchemaConfig {
-            content_type_from_header: None,
-            content_type: None,
-            forward_request_url: None,
-            forward_request_method: None,
-            forward_request_http_headers: None,
-            forward_ingest_version: None,
-            allowed_methods: None,
-            response_status: None,
-            destination_topic: None,
-            python_request_processor: Vec::new(),
-            librdkafka_config: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

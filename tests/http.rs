@@ -12,10 +12,14 @@ async fn start_server(config: serde_json::Value) -> IResult<Server> {
     );
     let _ = common::logging::Logging::init(
         common::logging::LoggingConfig {
-            fmt_json: false,
-            console: std::env::var("TEST_ENABLE_LOG").is_ok(),
+            console: common::logging::config::Console {
+                enabled: std::env::var("TEST_ENABLE_LOG").is_ok(),
+                json: false,
+                no_color: None,
+            },
             otel_metrics: false,
             otel_tracing: false,
+            log_level: "debug".to_string(),
         },
         "test",
         "test",
@@ -105,7 +109,7 @@ fn _server_config(
     librdkafka_config_opt: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut conf = service_config.clone();
-    conf["addr"] = serde_json::json!("127.0.0.1:0");
+    conf["address"] = serde_json::json!("127.0.0.1:0");
     conf["python_plugin_src_dir"] =
         serde_json::json!(env!("CARGO_MANIFEST_DIR").to_owned() + "/src/python");
     let librdkafka_config = if let Some(librdkafka_config) = librdkafka_config_opt {

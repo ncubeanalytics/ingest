@@ -1,6 +1,6 @@
 [service]
 # local address to bind the service to
-addr = '127.0.0.1:8088'
+address = '127.0.0.1:8088'
 
 [headers]
 # configure kafka header names
@@ -8,8 +8,9 @@ schema_id = "ncube-ingest-schema-id"
 ip = "ncube-ingest-ip"
 
 [logging]
-fmt_json = false
-console = true
+console.enabled = true
+console.json = false
+console.no_color = false
 otel_tracing = true
 otel_metrics = true
 

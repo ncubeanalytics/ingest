@@ -105,10 +105,9 @@ impl Kafka {
 
         self.get_producer(producer_name)
             .send(record, Timeout::Never)
-            .map_err(|(error, _)| error.into())
+            .map_err(|(error, _)| error)
             .map_ok(|_| {
                 trace!(topic, "Message successfully sent to kafka broker");
-                ()
             })
             .await
     }

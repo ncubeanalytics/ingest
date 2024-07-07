@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use actix_web::http::Method;
 use actix_web::middleware::Condition;
-use actix_web::{dev::ServerHandle, web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{dev::ServerHandle, web, App, HttpResponse, HttpServer};
 use common::config::ConfigError;
 use pyo3::{Py, PyAny};
 use tokio::task::JoinHandle;

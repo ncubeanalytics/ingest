@@ -9,7 +9,7 @@ use actix_web::{dev::ServerHandle, web, App, HttpResponse, HttpServer};
 use common::config::ConfigError;
 use pyo3::{Py, PyAny};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Span};
 use vec1::Vec1;
 
 // pub use connection::ws::WSError;
@@ -165,7 +165,9 @@ impl Server {
 
             App::new()
                 .app_data(state)
-                .wrap(tracing_actix_web::TracingLogger::default())
+                .wrap(tracing_actix_web::TracingLogger::<
+                    LogRequestEndRootSpanBuilder,
+                >::new())
                 .wrap(Condition::new(
                     config.logging.otel_metrics,
                     actix_web_opentelemetry::RequestMetrics::default(),
@@ -384,5 +386,25 @@ impl PythonProcessorResolver {
             }
         }
         None
+    }
+}
+
+pub struct LogRequestEndRootSpanBuilder;
+impl tracing_actix_web::RootSpanBuilder for LogRequestEndRootSpanBuilder {
+    fn on_request_start(request: &actix_web::dev::ServiceRequest) -> Span {
+        tracing_actix_web::DefaultRootSpanBuilder::on_request_start(request)
+    }
+
+    fn on_request_end<B: actix_web::body::MessageBody>(
+        span: Span,
+        outcome: &std::result::Result<actix_web::dev::ServiceResponse<B>, actix_web::Error>,
+    ) {
+        tracing_actix_web::DefaultRootSpanBuilder::on_request_end(span, outcome);
+        match outcome {
+            Ok(s) => {
+                debug!("{}", s.status())
+            }
+            Err(_) => debug!("Error"),
+        };
     }
 }

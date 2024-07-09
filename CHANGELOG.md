@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 - 2024-07-08
+
+### Changed
+
+* Configuration changes
+
 ## 0.8.0 - 2023-12-27
 
 ### Changed

@@ -9,7 +9,7 @@ use actix_web::{dev::ServerHandle, web, App, HttpResponse, HttpServer};
 use common::config::ConfigError;
 use pyo3::{Py, PyAny};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn};
 use vec1::Vec1;
 
 // pub use connection::ws::WSError;
@@ -150,14 +150,14 @@ impl Server {
             }
         }
 
-        let state = web::Data::new(ServerState::new(
-            kafka.clone(),
-            config.headers,
+        let state = web::Data::new(ServerState {
+            kafka: kafka.clone(),
+            header_names: config.headers,
             default_schema_config,
             schema_configs,
             python_processor_resolver,
-            config.service.max_event_size_bytes,
-        ));
+            max_event_size_bytes: config.service.max_event_size_bytes,
+        });
         let app_state = state.clone();
 
         let http_server = HttpServer::new(move || {
@@ -165,9 +165,7 @@ impl Server {
 
             App::new()
                 .app_data(state)
-                .wrap(tracing_actix_web::TracingLogger::<
-                    LogRequestEndRootSpanBuilder,
-                >::new())
+                .wrap(common::logging::actix_web::tracing_logger())
                 .wrap(Condition::new(
                     config.logging.otel_metrics,
                     actix_web_opentelemetry::RequestMetrics::default(),
@@ -386,25 +384,5 @@ impl PythonProcessorResolver {
             }
         }
         None
-    }
-}
-
-pub struct LogRequestEndRootSpanBuilder;
-impl tracing_actix_web::RootSpanBuilder for LogRequestEndRootSpanBuilder {
-    fn on_request_start(request: &actix_web::dev::ServiceRequest) -> Span {
-        tracing_actix_web::DefaultRootSpanBuilder::on_request_start(request)
-    }
-
-    fn on_request_end<B: actix_web::body::MessageBody>(
-        span: Span,
-        outcome: &std::result::Result<actix_web::dev::ServiceResponse<B>, actix_web::Error>,
-    ) {
-        tracing_actix_web::DefaultRootSpanBuilder::on_request_end(span, outcome);
-        match outcome {
-            Ok(s) => {
-                debug!("{}", s.status())
-            }
-            Err(_) => debug!("Error"),
-        };
     }
 }

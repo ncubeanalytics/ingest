@@ -2,7 +2,7 @@
 name = "ingest"
 version = "0.9.1"
 edition = "2021"
-rust-version = "1.78.0"
+rust-version = "1.79.0"
 
 [dependencies]
 futures = "0.3.30"

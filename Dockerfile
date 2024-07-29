@@ -1,4 +1,4 @@
-FROM rust:1.78.0-slim-bookworm AS build
+FROM rust:1.79.0-slim-bookworm AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3-dev -y

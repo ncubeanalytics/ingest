@@ -188,8 +188,7 @@ dependencies = [
 [[package]]
 name = "actix-web-opentelemetry"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "923b53a2a54dd0b6fb3e737a036b497321b693d16c120806ba4009478f06109b"
+source = "git+https://github.com/ncubeanalytics/actix-web-opentelemetry.git?branch=metric_attrs_from_req#8b0533c5a9fb972d92e807f8bd3854276e3294b0"
 dependencies = [
  "actix-http",
  "actix-web",
@@ -1102,6 +1101,7 @@ dependencies = [
  "futures",
  "json",
  "num_cpus",
+ "opentelemetry",
  "pyo3",
  "rdkafka",
  "reqwest",

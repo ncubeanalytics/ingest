@@ -279,6 +279,7 @@ pub async fn forward(
 ) -> IngestResponse {
     let conn_info = req.connection_info();
     let ip_address = conn_info.realip_remote_addr().unwrap_or("");
+    tracing::Span::current().record("schema_id", schema_id);
     tracing::Span::current().record("ip_address", ip_address);
 
     let mut headers: Vec<(String, Bytes)> = vec![

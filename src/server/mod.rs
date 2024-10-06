@@ -160,38 +160,40 @@ impl Server {
         });
         let app_state = state.clone();
 
-        let http_server =
-            HttpServer::new(move || {
-                let state = app_state.clone();
+        let http_server = HttpServer::new(move || {
+            let state = app_state.clone();
 
-                App::new()
-                    .app_data(state)
-                    .wrap(common::logging::actix_web::tracing_logger())
-                    .wrap(Condition::new(
-                        config.logging.otel_metrics,
-                        actix_web_opentelemetry::RequestMetrics::default(),
-                    ))
-                    .wrap(Condition::new(
-                        config.logging.sentry.enabled,
-                        sentry_actix::Sentry::new(),
-                    ))
-                    .service(
-                        web::scope("/ingest")
-                            .service(
-                                web::resource("/{schema_id}")
-                                    .route(web::route().to(connection::http::handle)),
-                            )
-                            .service(web::resource("/{schema_id}/{rest:.*}").route(
+            App::new()
+                .app_data(state)
+                .wrap(common::logging::actix_web::tracing_logger())
+                .wrap(Condition::new(
+                    config.logging.sentry.enabled,
+                    sentry_actix::Sentry::new(),
+                ))
+                .service(
+                    web::scope("/ingest/{schema_id}")
+                        .wrap(Condition::new(
+                            config.logging.otel_metrics,
+                            otel_metrics(), // needs to be under /ingest/{schema_id} path to catch the parsed schema id
+                        ))
+                        .service(web::resource("").route(web::route().to(connection::http::handle)))
+                        .service(
+                            web::resource("/{rest:.*}").route(
                                 web::route().to(connection::http::handle_with_trailing_path),
-                            )),
-                    )
-                    // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
-                    .default_service(web::route().to(|| HttpResponse::NotFound()))
-            })
-            .disable_signals()
-            .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
-            .workers(config.service.num_workers)
-            .bind(&config.service.address)?;
+                            ),
+                        ),
+                )
+                // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
+                .default_service(
+                    web::route()
+                        .to(|| HttpResponse::NotFound())
+                        .wrap(Condition::new(config.logging.otel_metrics, otel_metrics())),
+                )
+        })
+        .disable_signals()
+        .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
+        .workers(config.service.num_workers)
+        .bind(&config.service.address)?;
 
         // in case we bind to any available port
         let bound_addrs = http_server.addrs();
@@ -389,4 +391,22 @@ impl PythonProcessorResolver {
         }
         None
     }
+}
+
+fn otel_metrics() -> actix_web_opentelemetry::RequestMetrics {
+    actix_web_opentelemetry::RequestMetrics::builder()
+        .with_metric_attrs_from_req(metric_attributes_from_req)
+        .build()
+}
+
+fn metric_attributes_from_req(
+    req: &actix_web::dev::ServiceRequest,
+    http_route: std::borrow::Cow<'static, str>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = actix_web_opentelemetry::metrics_attributes_from_request(req, http_route);
+    let path = req.match_info();
+    if let Some(schema_id) = path.get("schema_id").map(|s| s.to_owned()) {
+        attrs.push(opentelemetry::KeyValue::new("ingest.schema.id", schema_id));
+    }
+    return attrs;
 }

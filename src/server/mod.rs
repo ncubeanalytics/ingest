@@ -160,34 +160,38 @@ impl Server {
         });
         let app_state = state.clone();
 
-        let http_server = HttpServer::new(move || {
-            let state = app_state.clone();
+        let http_server =
+            HttpServer::new(move || {
+                let state = app_state.clone();
 
-            App::new()
-                .app_data(state)
-                .wrap(common::logging::actix_web::tracing_logger())
-                .wrap(Condition::new(
-                    config.logging.otel_metrics,
-                    actix_web_opentelemetry::RequestMetrics::default(),
-                ))
-                .wrap(Condition::new(
-                    config.logging.sentry.enabled,
-                    sentry_actix::Sentry::new(),
-                ))
-                .service(
-                    web::resource("/{schema_id}").route(web::route().to(connection::http::handle)),
-                )
-                .service(
-                    web::resource("/{schema_id}/{rest:.*}")
-                        .route(web::route().to(connection::http::handle_with_trailing_path)),
-                )
-                // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
-                .default_service(web::route().to(|| HttpResponse::NotFound()))
-        })
-        .disable_signals()
-        .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
-        .workers(config.service.num_workers)
-        .bind(&config.service.address)?;
+                App::new()
+                    .app_data(state)
+                    .wrap(common::logging::actix_web::tracing_logger())
+                    .wrap(Condition::new(
+                        config.logging.otel_metrics,
+                        actix_web_opentelemetry::RequestMetrics::default(),
+                    ))
+                    .wrap(Condition::new(
+                        config.logging.sentry.enabled,
+                        sentry_actix::Sentry::new(),
+                    ))
+                    .service(
+                        web::scope("/ingest")
+                            .service(
+                                web::resource("/{schema_id}")
+                                    .route(web::route().to(connection::http::handle)),
+                            )
+                            .service(web::resource("/{schema_id}/{rest:.*}").route(
+                                web::route().to(connection::http::handle_with_trailing_path),
+                            )),
+                    )
+                    // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
+                    .default_service(web::route().to(|| HttpResponse::NotFound()))
+            })
+            .disable_signals()
+            .keep_alive(Duration::from_secs(config.service.keepalive_seconds))
+            .workers(config.service.num_workers)
+            .bind(&config.service.address)?;
 
         // in case we bind to any available port
         let bound_addrs = http_server.addrs();

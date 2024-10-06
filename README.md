@@ -33,16 +33,12 @@ Check [config.sample.toml](./config.sample.toml)
 
 ## Testing
 
-The tests are mainly integration tests. To run them you will need a kafka broker.
-
-You can start a broker with docker compose:
-```sh
-BROKER_HOST=localhost BROKER_PORT=19092 docker-compose up -d
-```
+The tests are mainly integration tests. To run them you will need a kafka broker. The one
+from the common repo docker compose is ready to use.
 
 Run integration tests only:
 ```sh
-BROKER_ADDRESS=localhost:19092 cargo test --test server
+cargo test --test server
 ```
 
 Run all tests:

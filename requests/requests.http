@@ -1,17 +1,17 @@
 ### send json
-POST {{host}}/key
+POST {{host}}/ingest/key
 Content-Type: application/json
 
 {}
 
 ### send bogus
-POST {{host}}/key
+POST {{host}}/ingest/key
 Content-Type: application/json
 
 < ./nonutf8
 
 ### send jsonlines
-POST {{host}}/key
+POST {{host}}/ingest/key
 Content-Type: application/jsonlines
 
 {"id": 10, "value": "content"}

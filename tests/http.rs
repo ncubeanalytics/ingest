@@ -89,7 +89,7 @@ async fn build_request(
 
     let addr = &server.addrs().first().unwrap().to_string();
 
-    let mut req = client.request(method, format!("http://{}/{}", addr, path));
+    let mut req = client.request(method, format!("http://{}/ingest/{}", addr, path));
 
     for (k, v) in headers {
         req = req.header(k, v);
@@ -98,7 +98,7 @@ async fn build_request(
 }
 
 fn broker_addr() -> String {
-    std::env::var("BROKER_ADDRESS").unwrap_or("localhost:9092".to_owned())
+    std::env::var("BROKER_ADDRESS").unwrap_or("localhost:19092".to_owned())
 }
 
 fn server_config(service_config: serde_json::Value) -> serde_json::Value {
@@ -157,7 +157,9 @@ async fn assert_ingest_response(
     // );
     let content_type = expected_body
         .as_ref()
-        .map(|_| res.headers()["content-type"].clone());
+        .map(|_| res.headers().get("content-type"))
+        .flatten()
+        .cloned();
     assert_response(res, status, expected_body.as_deref()).await;
     if let Some(_) = expected_body {
         assert_eq!(content_type.unwrap(), "application/json");
@@ -667,7 +669,7 @@ async fn test_response_schema_specific_config() {
     let addr = &server.addrs().first().unwrap().to_string();
 
     let res = client
-        .request(Method::POST, format!("http://{}/{}", addr, "2"))
+        .request(Method::POST, format!("http://{}/ingest/{}", addr, "2"))
         .body(DATA)
         .send()
         .await
@@ -680,7 +682,7 @@ async fn test_response_schema_specific_config() {
     .await;
 
     let res = client
-        .request(Method::POST, format!("http://{}/{}", addr, "1"))
+        .request(Method::POST, format!("http://{}/ingest/{}", addr, "1"))
         .body(DATA)
         .send()
         .await
@@ -886,7 +888,7 @@ async fn test_response_python_conditional_response() {
     let addr = &server.addrs().first().unwrap().to_string();
 
     let res = client
-        .request(Method::POST, format!("http://{}/{}", addr, "1"))
+        .request(Method::POST, format!("http://{}/ingest/{}", addr, "1"))
         .body("no")
         .send()
         .await
@@ -899,7 +901,7 @@ async fn test_response_python_conditional_response() {
     .await;
 
     let res = client
-        .request(Method::GET, format!("http://{}/{}", addr, "1"))
+        .request(Method::GET, format!("http://{}/ingest/{}", addr, "1"))
         .header("a", "b")
         .header("c", "d")
         .body("yes")
@@ -929,7 +931,7 @@ async fn test_response_python_specific_method() {
     let addr = &server.addrs().first().unwrap().to_string();
 
     let res = client
-        .request(Method::POST, format!("http://{}/{}", addr, "1"))
+        .request(Method::POST, format!("http://{}/ingest/{}", addr, "1"))
         .body("no")
         .send()
         .await
@@ -942,7 +944,7 @@ async fn test_response_python_specific_method() {
     .await;
 
     let res = client
-        .request(Method::GET, format!("http://{}/{}", addr, "1"))
+        .request(Method::GET, format!("http://{}/ingest/{}", addr, "1"))
         .body("yes")
         .send()
         .await

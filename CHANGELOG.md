@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 - 2024-10-06
+
+### Added
+
+* Emit `ingest.schema.id` metric attribute
+
+### Changed
+
+* Endpoints are now under the `/ingest` path, not the root
+
 ## 0.9.0 - 2024-07-08
 
 ### Changed

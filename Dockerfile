@@ -1,7 +1,9 @@
-FROM rust:1.79.0-slim-bookworm AS build
+FROM rust:1.83.0-slim-bookworm AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update -y && apt-get install build-essential pkg-config libssl-dev python3-dev -y
+RUN apt-get update -y && apt-get install build-essential pkg-config \
+    libssl-dev python3-dev zlib1g-dev libsasl2-dev libzstd-dev libsasl2-dev \
+    libcurl4-openssl-dev -y
 
 # workaround to cache dependencies compilation
 # https://github.com/rust-lang/cargo/issues/2644#issuecomment-335272535
@@ -22,7 +24,9 @@ FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update -y && apt-get install ca-certificates python3-dev -y
+RUN apt-get update -y && apt-get install ca-certificates \
+    libssl-dev python3-dev zlib1g-dev libsasl2-dev libzstd-dev libsasl2-dev \
+    libcurl4-openssl-dev -y
 
 RUN mkdir -p /opt/ingest/python
 ENV PYTHONPATH=/opt/ingest/python

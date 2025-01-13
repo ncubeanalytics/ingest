@@ -39,7 +39,7 @@ features = ["signal"]
 
 [dependencies.rdkafka]
 version = "0.36.2"
-features = ["ssl", "tracing"]
+features = ["ssl", "curl", "sasl", "zstd", "gssapi", "tracing"]
 
 [dependencies.pyo3]
 version = "0.19.2"

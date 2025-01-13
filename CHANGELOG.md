@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 - 2025-01-13
+
+### Added
+
+* Add support for all librdkafka features and corresponding debian packages
+
 ## 0.10.0 - 2024-10-06
 
 ### Added

@@ -442,13 +442,13 @@ async fn test_response_ndjson_ignore_empty_lines() {
 
     // language=jsonlines
     let datalines =
-        "{\"line1\": \"1\"}\n\n{\"line2\": \"2\"}\n\t\r     \n{\"line3\": \"3\"}\n    \t\t\t\r\n";
+        "{\"line0\": \"0\"}\r\n{\"line1\": \"1\"}\n\n{\"line2\": \"2\"}\n\t\r     \n{\"line3\": \"3\"}\n    \t\t\t\r\n";
 
     let res = request(config, "1", datalines, Method::POST).await.unwrap();
     assert_ingest_response(
         res,
         StatusCode::OK,
-        Some(("application/jsonlines".to_owned(), 3, 42, "1".to_owned())),
+        Some(("application/jsonlines".to_owned(), 4, 56, "1".to_owned())),
     )
     .await;
 }

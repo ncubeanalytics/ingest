@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0 - 2025-01-14
+
+### Changed
+
+* Changed configuration to support arbitrary librdkafka properties read from a file, not just 
+  sasl password
+
 ## 0.11.0 - 2025-01-13
 
 ### Added

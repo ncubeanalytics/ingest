@@ -51,12 +51,6 @@ impl fmt::Display for ContentType {
     }
 }
 
-#[derive(Clone, Default, Debug, Deserialize)]
-#[serde(default)]
-pub struct KafkaSecrets {
-    pub sasl_password_path: Option<String>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct SchemaConfig {
     #[serde(default = "default_content_type_from_header")]
@@ -142,7 +136,7 @@ pub struct LibrdkafkaConfig {
     #[serde(default)]
     pub config: HashMap<String, String>,
     #[serde(default)]
-    pub secrets: KafkaSecrets,
+    pub config_from_file: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

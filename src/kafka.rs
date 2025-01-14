@@ -39,9 +39,9 @@ impl Kafka {
                 producer_config.set(key, value);
             }
 
-            if let Some(sasl_password_path) = &librdkafka_config.secrets.sasl_password_path {
-                let content = fs::read_to_string(sasl_password_path)?;
-                producer_config.set("sasl.password", content);
+            for (key, path) in &librdkafka_config.config_from_file {
+                let value = fs::read_to_string(path)?;
+                producer_config.set(key, value);
             }
 
             let producer = producer_config.create()?;

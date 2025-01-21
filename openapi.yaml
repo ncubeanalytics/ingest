@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Ingest Service
+  description: Ingest real-time and bulk data
+  version: 0.11.0
+paths:
+  /ingest/{stream-id}:
+    parameters:
+    - name: stream-id
+      description: The stream/schema id. Arbitrary identifier to uniquely identify the data stream
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      parameters:
+        - in: header
+          name: Content-Length
+          description: "Size in bytes of the sent data. Required unless using 'Transfer-Encoding: chunked'"
+          schema:
+            type: integer
+        - in: header
+          name: Transfer-Encoding
+          description: "Use Transfer-Encoding: chunked without specifying the 'Content-Length' header to stream data in"
+          schema:
+            type: string
+            enum:
+            - chunked
+      summary: Send data
+      requestBody:
+        description: Newline delimited JSON of arbitrary size. Each line can be up to 1MB. Data can also be streamed using chunked transfer encoding 
+        content:
+          application/jsonlines:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Data has been persisted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingested_count:
+                    type: integer
+                  ingested_bytes:
+                    type: integer
+                  ingested_content_type:
+                    type: string
+                  ingested_schema_id:
+                    type: string
+        "400":
+          description: Invalid UTF-8 encoded data
+        "413":
+          description: Content has exceeded the maximum allowed size per json line
+        "5XX":
+          description: Unexpected error, retry the request

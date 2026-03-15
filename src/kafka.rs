@@ -45,7 +45,7 @@ impl Kafka {
             }
 
             let producer = producer_config.create()?;
-            if let Some(_) = producers.insert(librdkafka_config.name.to_owned(), producer) {
+            if producers.insert(librdkafka_config.name.to_owned(), producer).is_some() {
                 return Err(Error::from(ConfigError::Invalid(format!(
                     "Librdkafka configuration with name '{}' specified more than once",
                     librdkafka_config.name

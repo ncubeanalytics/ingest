@@ -3,7 +3,7 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use common::config::CommonConfig;
-use common::logging::LoggingConfig;
+use common::logging::{LoggingConfig, LoggingDefaults};
 use serde::{Deserialize, Serialize};
 use vec1::{vec1, Vec1};
 
@@ -139,13 +139,19 @@ pub struct LibrdkafkaConfig {
     pub config_from_file: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServiceLoggingDefaults;
+impl LoggingDefaults for ServiceLoggingDefaults {
+    const LOG_LEVEL: &'static str = "debug,h2=info,tower=info,hyper=info,tonic=info,want=debug,rdkafka=debug,tokio_postgres=info,reqwest=info";
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub service: ServiceConfig,
     #[serde(default)]
     pub headers: HeaderNames,
     #[serde(default)]
-    pub logging: LoggingConfig,
+    pub logging: LoggingConfig<ServiceLoggingDefaults>,
     #[serde(default)]
     pub librdkafka: Vec1<LibrdkafkaConfig>,
 }
@@ -158,6 +164,8 @@ impl CommonConfig for Config {
 const fn default_keepalive_seconds() -> u64 {
     300
 }
+
+#[allow(clippy::identity_op)]
 const fn default_max_event_size_bytes() -> u64 {
     1 * 1024 * 1024 // 1Mb, kafka default and events hubs limit
 }

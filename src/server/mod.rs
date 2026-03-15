@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use actix_web::http::Method;
 use actix_web::middleware::Condition;
-use actix_web::{dev::ServerHandle, web, App, HttpResponse, HttpServer};
+use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, web};
 use common::config::ConfigError;
 use pyo3::{Py, PyAny};
 use tokio::task::JoinHandle;
@@ -17,7 +17,7 @@ use state::ServerState;
 
 use crate::config::{PythonProcessorConfig, SchemaConfig};
 use crate::python::{import_and_call_callable, init_python};
-use crate::{error::Error, error::Result, kafka::Kafka, Config};
+use crate::{Config, error::Error, error::Result, kafka::Kafka};
 
 mod connection;
 mod state;
@@ -65,7 +65,7 @@ impl Server {
             ))));
         }
         let methods_cleaned = validate_convert_methods(&default_schema_config.allowed_methods)
-            .map_err(|s| ConfigError::Invalid(s))?;
+            .map_err(ConfigError::Invalid)?;
         default_schema_config.allowed_methods = methods_cleaned;
 
         for default_python_processor_config in default_schema_config.python_request_processor.iter()
@@ -76,7 +76,7 @@ impl Server {
         // construct the full schema configs filling in from default values
         for c in config.service.schema_config.iter() {
             let allowed_methods = if let Some(allowed_methods) = &c.schema_config.allowed_methods {
-                validate_convert_methods(&allowed_methods).map_err(|s| ConfigError::Invalid(s))?
+                validate_convert_methods(allowed_methods).map_err(ConfigError::Invalid)?
             } else {
                 default_schema_config.allowed_methods.clone()
             };
@@ -84,10 +84,10 @@ impl Server {
                 if let Some(librdkafka_config) = &c.schema_config.librdkafka_config {
                     if !kafka_producer_names.contains(&librdkafka_config.as_str()) {
                         return Err(Error::from(ConfigError::Invalid(format!(
-                        "Librdkafka config with name '{}' configured on schema '{}' not found. \
+                            "Librdkafka config with name '{}' configured on schema '{}' not found. \
                         Available librdkafka configs: {:?}",
-                        librdkafka_config, c.schema_id, kafka_producer_names
-                    ))));
+                            librdkafka_config, c.schema_id, kafka_producer_names
+                        ))));
                     } else {
                         librdkafka_config.clone()
                     }
@@ -104,7 +104,7 @@ impl Server {
                     .schema_config
                     .content_type
                     .clone()
-                    .map(|ct| Some(ct))
+                    .map(Some)
                     .unwrap_or(default_schema_config.content_type.clone()),
                 forward_request_url: c
                     .schema_config
@@ -186,7 +186,7 @@ impl Server {
                 // .service(web::resource("/ws").route(web::get().to(connection::ws::handle)))
                 .default_service(
                     web::route()
-                        .to(|| HttpResponse::NotFound())
+                        .to(HttpResponse::NotFound)
                         .wrap(Condition::new(config.logging.otel_metrics, otel_metrics())),
                 )
         })
@@ -322,7 +322,7 @@ impl PythonProcessorResolver {
         // if it does not have methods, fail if the default is already set
         if let Some(methods) = &processor_config.methods {
             let cleaned_methods =
-                validate_convert_methods(&methods).map_err(|s| ConfigError::Invalid(s))?;
+                validate_convert_methods(methods).map_err(ConfigError::Invalid)?;
             for method in cleaned_methods {
                 if default_and_method_specific.1.contains_key(&method) {
                     return Err(Error::from(ConfigError::Invalid(format!(
@@ -380,21 +380,28 @@ impl PythonProcessorResolver {
             .schema_to_processor
             .get(schema_id)
             .or(Some(&self.default_processor))
+            && let Some(path) = method_specific.get(method).or(default.as_ref())
         {
-            if let Some(path) = method_specific.get(method).or(default.as_ref()) {
-                return Some(self.callable_path_to_processor.get(path).expect(&format!(
-                    "Callable path {} does not exist in paths: {:?}",
-                    path,
-                    self.callable_path_to_processor.keys().collect::<Vec<&String>>()
-                )));
-            }
+            return Some(
+                self.callable_path_to_processor
+                    .get(path)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Callable path {} does not exist in paths: {:?}",
+                            path,
+                            self.callable_path_to_processor
+                                .keys()
+                                .collect::<Vec<&String>>()
+                        )
+                    }),
+            );
         }
         None
     }
 }
 
-fn otel_metrics() -> actix_web_opentelemetry::RequestMetrics {
-    actix_web_opentelemetry::RequestMetrics::builder()
+fn otel_metrics() -> opentelemetry_instrumentation_actix_web::RequestMetrics {
+    opentelemetry_instrumentation_actix_web::RequestMetrics::builder()
         .with_metric_attrs_from_req(metric_attributes_from_req)
         .build()
 }
@@ -403,10 +410,11 @@ fn metric_attributes_from_req(
     req: &actix_web::dev::ServiceRequest,
     http_route: std::borrow::Cow<'static, str>,
 ) -> Vec<opentelemetry::KeyValue> {
-    let mut attrs = actix_web_opentelemetry::metrics_attributes_from_request(req, http_route);
+    let mut attrs =
+        opentelemetry_instrumentation_actix_web::metrics_attributes_from_request(req, http_route);
     let path = req.match_info();
     if let Some(schema_id) = path.get("schema_id").map(|s| s.to_owned()) {
         attrs.push(opentelemetry::KeyValue::new("ingest.schema.id", schema_id));
     }
-    return attrs;
+    attrs
 }

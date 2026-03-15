@@ -4,8 +4,8 @@ use std::path::Path;
 use pyo3::exceptions::PyKeyError;
 use pyo3::types::{PyBytes, PyList, PyString};
 use pyo3::{
-    intern, pyclass, pymethods, IntoPy, Py, PyAny, PyCell, PyErr, PyObject, PyRef, PyRefMut,
-    PyResult, Python,
+    IntoPy, Py, PyAny, PyCell, PyErr, PyObject, PyRef, PyRefMut, PyResult, Python, intern, pyclass,
+    pymethods,
 };
 use tracing::info;
 
@@ -17,7 +17,7 @@ pub fn init_python(plugin_src_dir: &str) -> PyResult<()> {
     let pymodule_path = Path::new(plugin_src_dir);
     Python::with_gil(|py| {
         let syspath: &PyList = py.import("sys")?.getattr("path")?.extract()?;
-        syspath.insert(0, &pymodule_path)?;
+        syspath.insert(0, pymodule_path)?;
         Ok(())
     })
 }
@@ -26,7 +26,7 @@ pub fn import_and_call_callable(module: &str, callable: &str) -> PyResult<Py<PyA
     Python::with_gil(|py| {
         let module = py.import(module)?;
         let processor_instance = module.getattr(callable)?.call0()?;
-        Ok(processor_instance.extract()?)
+        processor_instance.extract()
     })
 }
 
@@ -105,8 +105,7 @@ pub fn pyerror_with_traceback_string(e: &PyErr) -> String {
         format!(
             "{}{}",
             e.traceback(py)
-                .map(|t| t.format().ok())
-                .flatten()
+                .and_then(|t| t.format().ok())
                 .unwrap_or("".to_owned()),
             e
         )
@@ -126,7 +125,7 @@ impl Headers {
         self.0.contains_key(key)
     }
 
-    fn __getitem__<'a, 'b>(slf: &'a PyCell<Self>, key: &'b str) -> PyResult<&'a PyAny> {
+    fn __getitem__<'a>(slf: &'a PyCell<Self>, key: &str) -> PyResult<&'a PyAny> {
         match slf.get().0.get(key) {
             None => Err(PyKeyError::new_err(key.to_owned())),
             Some(v) => Ok(match v.to_str() {
@@ -136,23 +135,22 @@ impl Headers {
         }
     }
 
-    fn get<'a, 'b>(
+    fn get<'a>(
         slf: &'a PyCell<Self>,
-        key: &'b str,
+        key: &str,
         default: Option<&'a PyAny>,
     ) -> PyResult<Option<&'a PyAny>> {
         Ok(match Self::__getitem__(slf, key) {
             Ok(v) => Some(v),
             Err(_) => default,
-        }
-        .into())
+        })
     }
 
     fn __iter__(slf: PyRef<'_, Self>) -> PyResult<Py<HeaderNamesIter>> {
         let iter = HeaderNamesIter(
             slf.0
                 .keys()
-                .map(|n| n.clone())
+                .cloned()
                 .collect::<Vec<HeaderName>>()
                 .into_iter(),
         );
@@ -172,7 +170,7 @@ impl Headers {
         Py::new(slf.py(), iter)
     }
 
-    fn getlist<'a, 'b>(slf: &'a PyCell<Self>, key: &'b str) -> &'a PyList {
+    fn getlist<'a>(slf: &'a PyCell<Self>, key: &str) -> &'a PyList {
         let l = PyList::empty(slf.py());
         for v in slf.get().0.get_all(key) {
             match v.to_str() {

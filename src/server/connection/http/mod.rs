@@ -2,11 +2,11 @@ use std::ops::Index;
 
 use actix_web::error::{ErrorBadRequest, ErrorPayloadTooLarge, PayloadError};
 use actix_web::http::StatusCode;
-use actix_web::{web, HttpRequest, HttpResponse, ResponseError};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use async_stream::stream;
 use bytes::Bytes;
-use futures::{pin_mut, Stream};
-use tracing::{instrument, trace, Instrument};
+use futures::{Stream, pin_mut};
+use tracing::{Instrument, instrument, trace};
 
 use futures::stream::StreamExt;
 use serde::Serialize;
@@ -18,7 +18,7 @@ use crate::config::{ContentType, HeaderNames, SchemaConfig};
 use crate::error::{Error, Result};
 use crate::event::forward_message_to_kafka;
 use crate::kafka::Kafka;
-use crate::python::{call_processor_process, call_processor_process_head, ProcessorResponse};
+use crate::python::{ProcessorResponse, call_processor_process, call_processor_process_head};
 use crate::server::{PythonProcessor, ServerState};
 
 pub async fn handle_with_trailing_path(
@@ -71,7 +71,7 @@ async fn _handle(
     // time stores the read bytes and can be later passed as a stream to forward()
     if let Some(python_processor) = state
         .python_processor_resolver
-        .get(&schema_id, &req.method().to_string())
+        .get(&schema_id, req.method().as_ref())
     {
         let (r, body_read_) = process_python(
             &req,
@@ -171,11 +171,10 @@ pub async fn process_python(
     let method = req.method().to_string();
 
     if python_processor.implements_process_head {
-        let res;
         // use spawn_blocking if blocking
         // https://docs.rs/actix-rt/latest/actix_rt/task/fn.spawn_blocking.html
-        if python_processor.process_head_is_blocking {
-            res = {
+        let res = if python_processor.process_head_is_blocking {
+            {
                 let url = url.clone();
                 let method = method.clone();
                 let headers = req.headers().clone();
@@ -186,15 +185,15 @@ pub async fn process_python(
                 })
             }
             .await
-            .unwrap()?;
+            .unwrap()?
         } else {
-            res = call_processor_process_head(
+            call_processor_process_head(
                 &python_processor.processor,
                 url.as_str(),
                 &method,
                 req.headers().clone(),
-            )?;
-        }
+            )?
+        };
         if let Some(r) = res {
             return Ok((Some(r), Bytes::new()));
         }
@@ -205,7 +204,7 @@ pub async fn process_python(
     while let Some(item) = body_stream.next().await {
         let chunk = item.map_err(|e| Error::from(actix_web::Error::from(e)))?;
         let read_limit_exceeded = (read_body.len() + chunk.len()) > read_max_body_bytes;
-        if read_limit_exceeded && read_body.len() > 0 {
+        if read_limit_exceeded && !read_body.is_empty() {
             remaining.extend_from_slice(&chunk);
         } else {
             read_body.extend_from_slice(&chunk);
@@ -215,11 +214,10 @@ pub async fn process_python(
         }
     }
 
-    let res;
     // use spawn_blocking if blocking
     // https://docs.rs/actix-rt/latest/actix_rt/task/fn.spawn_blocking.html
-    if python_processor.process_is_blocking {
-        res = {
+    let res = if python_processor.process_is_blocking {
+        {
             let url = url.clone();
             let method = method.clone();
             let headers = req.headers().clone();
@@ -237,16 +235,16 @@ pub async fn process_python(
             })
         }
         .await
-        .unwrap()?;
+        .unwrap()?
     } else {
-        res = call_processor_process(
+        call_processor_process(
             &python_processor.processor,
             url.as_str(),
             &method,
             req.headers().clone(),
             Vec::from(read_body.clone()).as_slice(),
         )?
-    }
+    };
     read_body.extend_from_slice(&remaining);
     tracing::Span::current().record("body_read_size", read_body.len());
     Ok((res, read_body.freeze()))
@@ -277,10 +275,13 @@ pub async fn forward(
     kafka: Kafka,
     max_event_size_bytes: usize,
 ) -> IngestResponse {
-    let conn_info = req.connection_info();
-    let ip_address = conn_info.realip_remote_addr().unwrap_or("");
+    let ip_address = req
+        .connection_info()
+        .realip_remote_addr()
+        .unwrap_or("")
+        .to_owned();
     tracing::Span::current().record("schema_id", schema_id);
-    tracing::Span::current().record("ip_address", ip_address);
+    tracing::Span::current().record("ip_address", ip_address.as_str());
 
     let mut headers: Vec<(String, Bytes)> = vec![
         (
@@ -337,8 +338,7 @@ pub async fn forward(
         if let Some(req_content_type) = req
             .headers()
             .get("content-type")
-            .map(|h| h.to_str().ok())
-            .flatten()
+            .and_then(|h| h.to_str().ok())
         {
             // Content-Type contents defined at https://www.rfc-editor.org/rfc/rfc9110#media.type
             match req_content_type.split(";").next().unwrap_or("") {
@@ -383,7 +383,7 @@ pub async fn forward(
                             ingested_content_type: content_type,
                             ingested_schema_id: schema_id.to_owned(),
                             error: Some(Error::from(actix_web::Error::from(e))),
-                        }
+                        };
                     }
                     Ok(item) => item,
                 };
@@ -433,7 +433,7 @@ pub async fn forward(
                         ingested_content_type: content_type,
                         ingested_schema_id: schema_id.to_owned(),
                         error: Some(Error::from(e)),
-                    }
+                    };
                 }
                 Ok(_) => {
                     messages_delivered += 1;
@@ -453,9 +453,7 @@ pub async fn forward(
             let stream_reader = StreamReader::new(
                 body_stream
                     // StreamReader needs errors to be std::io::Error, so convert them
-                    .map(|result| {
-                        result.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
-                    }),
+                    .map(|result| result.map_err(std::io::Error::other)),
             );
 
             let mut newline_stream = FramedRead::new(
@@ -491,7 +489,7 @@ pub async fn forward(
                                 },
                                 Ok(data) => {
                                     let data = data.trim(); // XXX: create new codec that returns bytes, not string
-                                    if data.len() > 0 {
+                                    if !data.is_empty() {
                                         messages_received += 1;
                                         trace!(messages_received, messages_delivered, "JSON received");
                                         tracing::Span::current().record("message_count", messages_received);

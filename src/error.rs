@@ -35,7 +35,7 @@ impl fmt::Display for Error {
             IO(e) => write!(f, "IO error: {}", e),
             Logging(e) => write!(f, "Invalid log filter directive: {}", e),
             Config(e) => write!(f, "Configuration error: {}", e),
-            Python(e) => write!(f, "Python error:\n{}", pyerror_with_traceback_string(&e)),
+            Python(e) => write!(f, "Python error:\n{}", pyerror_with_traceback_string(e)),
             ActixWeb(e) => write!(f, "Actix-web error:\n{}", e),
             // WSNotAccepted => write!(
             //     f,

@@ -1,3 +1,4 @@
+use std::time::Duration;
 use async_stream::try_stream;
 use reqwest::{Body, Client, Method, RequestBuilder, Response, StatusCode};
 
@@ -19,7 +20,7 @@ async fn start_server(config: serde_json::Value) -> IResult<Server> {
             },
             otel_metrics: false,
             otel_tracing: false,
-            log_level: "debug".to_string(),
+            log_level: "trace,rdkafka=debug,h2=debug,tower=debug,hyper=debug,tonic=debug,actix_http=debug,want=debug,actix_server=debug,mio=debug".to_string(),
             sentry: Default::default(),
         },
         "test",
@@ -53,10 +54,13 @@ async fn request_with_headers<T: Into<Body>>(
     Ok(res)
 }
 
-fn vec_to_stream(v: Vec<String>) -> impl TryStream<Ok = String, Error = std::io::Error> {
+fn vec_to_stream(v: Vec<String>, delay: bool) -> impl TryStream<Ok = String, Error = std::io::Error> {
     try_stream! {
         for d in v {
             yield d;
+            if delay {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
         }
     }
 }
@@ -67,10 +71,11 @@ async fn request_with_stream(
     body: Vec<String>,
     method: Method,
     headers: Vec<(String, String)>,
+    delay: bool
 ) -> IResult<Response> {
     let (server, req) = build_request(server_config, schema_id, method, headers).await?;
 
-    let s = vec_to_stream(body);
+    let s = vec_to_stream(body, delay);
 
     let res = req.body(Body::wrap_stream(s)).send().await.unwrap();
 
@@ -432,6 +437,27 @@ async fn test_response_ndjson() {
 }
 
 #[tokio::test]
+async fn test_response_ndjson_empty_request_body() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "content_type": "application/jsonlines"
+        }
+    }));
+
+    // language=jsonlines
+    let datalines = "";
+
+    let res = request(config, "1", datalines, Method::POST).await.unwrap();
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/jsonlines".to_owned(), 0, 0, "1".to_owned())),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_response_ndjson_ignore_empty_lines() {
     let config = server_config(serde_json::json!({
         "default_schema_config": {
@@ -463,7 +489,7 @@ async fn test_response_chunked_transfer() {
 
     let data = vec![DATA.to_owned(), DATA.to_owned(), DATA.to_owned()];
 
-    let res = request_with_stream(config, "1", data, Method::POST, Vec::new())
+    let res = request_with_stream(config, "1", data, Method::POST, Vec::new(), false)
         .await
         .unwrap();
 
@@ -495,7 +521,34 @@ async fn test_response_chunked_transfer_ndjson() {
         "{\"line\": 3}\n".to_owned(),
     ];
 
-    let res = request_with_stream(config, "1", data, Method::POST, Vec::new())
+    let res = request_with_stream(config, "1", data, Method::POST, Vec::new(), false)
+        .await
+        .unwrap();
+
+    assert_ingest_response(
+        res,
+        StatusCode::OK,
+        Some(("application/jsonlines".to_owned(), 3, 33, "1".to_owned())),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_response_chunked_transfer_ndjson_delay() {
+    let config = server_config(serde_json::json!({
+        "default_schema_config": {
+            "destination_topic": "test",
+            "content_type": "application/jsonlines"
+        }
+    }));
+
+    let data = vec![
+        "{\"line\": 1}\n".to_owned(),
+        "{\"line\": 2}\n".to_owned(),
+        "{\"line\": 3}\n".to_owned(),
+    ];
+
+    let res = request_with_stream(config, "1", data, Method::POST, Vec::new(), true)
         .await
         .unwrap();
 
@@ -543,7 +596,7 @@ async fn test_response_chunked_transfer_limit_exceeded() {
         "44".to_owned(),
     ];
 
-    let res = request_with_stream(config, "1", data, Method::POST, Vec::new())
+    let res = request_with_stream(config, "1", data, Method::POST, Vec::new(), false)
         .await
         .unwrap();
 
@@ -594,7 +647,7 @@ async fn test_response_chunked_transfer_ndjson_line_limit_exceeded() {
         "44\n".to_owned(),
     ];
 
-    let res = request_with_stream(config, "1", data, Method::POST, Vec::new())
+    let res = request_with_stream(config, "1", data, Method::POST, Vec::new(), false)
         .await
         .unwrap();
 

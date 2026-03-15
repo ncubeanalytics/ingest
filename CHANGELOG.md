@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0 - unreleased
+
+### Fixed
+
+* Fix hanging requests when sending newline-delimited json with empty request body or delayed
+  next chunk when using chunked-transfer encoding, by fixing the request termination/shutdown logic
+
 ## 0.12.0 - 2025-01-14
 
 ### Changed

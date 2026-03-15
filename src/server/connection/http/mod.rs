@@ -6,7 +6,7 @@ use actix_web::{web, HttpRequest, HttpResponse, ResponseError};
 use async_stream::stream;
 use bytes::Bytes;
 use futures::{pin_mut, Stream};
-use tracing::{instrument, trace};
+use tracing::{instrument, trace, Instrument};
 
 use futures::stream::StreamExt;
 use serde::Serialize;
@@ -442,6 +442,7 @@ pub async fn forward(
         }
         ContentType::Jsonlines => {
             let (delivered_tx, mut delivered_rx) = mpsc::channel(512);
+            let mut delivered_tx = Some(delivered_tx);
 
             pin_mut!(body_stream);
             // convert the bytes stream into an async read and use line codec framing to turn that
@@ -482,7 +483,11 @@ pub async fn forward(
                                     // produces to finish. exiting is handled in the delivery
                                     // listener
                                     error = Some(e);
-                                    newline_stream_done = true;
+                                    newline_stream_done = true; // disable this select branch
+                                    delivered_tx.take();
+                                    // drop the original sender here, so that once the remaining senders
+                                    // that belong to spawned produce tasks are dropped, the receiver
+                                    // returns None
                                 },
                                 Ok(data) => {
                                     let data = data.trim(); // XXX: create new codec that returns bytes, not string
@@ -521,7 +526,10 @@ pub async fn forward(
                                             let data = Bytes::from(data.as_bytes().to_vec());
                                             let destination_topic = schema_config.destination_topic.to_owned();
                                             let librdkafka_config = schema_config.librdkafka_config.to_owned();
-                                            let delivered_tx = delivered_tx.clone();
+                                            // the sender option here will never be None, because
+                                            // when we set it to None we also disable this select
+                                            // branch
+                                            let delivered_tx = delivered_tx.as_ref().cloned().unwrap();
                                             tokio::spawn(async move {
                                                 // XXX: limit spawns up to a number
                                                 // https://users.rust-lang.org/t/tokio-number-of-concurrent-tasks/40450
@@ -531,15 +539,18 @@ pub async fn forward(
                                                     forward_message_to_kafka(data, headers, kafka, &destination_topic, &librdkafka_config)
                                                         .await;
                                                 let _ = delivered_tx.send(res).await;
-                                            });
+                                            }.in_current_span());
                                         }
                                     }
                                 }
                             }
                         } else {
                             trace!(messages_received, messages_delivered, "end of JSON lines received");
-                            newline_stream_done = true;
-                            // disables this select branch
+                            newline_stream_done = true; // disable this select branch
+                            delivered_tx.take();
+                            // drop the original sender here, so that once the remaining senders
+                            // that belong to spawned produce tasks are dropped, the receiver
+                            // returns None
                         }
                     }
                     Some(res) = delivered_rx.recv() => {
@@ -548,6 +559,7 @@ pub async fn forward(
                                 // on delivery error, set the error (but don't overwrite an error
                                 // already set by a request stream error), and stop waiting for any
                                 // further deliveries
+                                trace!(messages_received, messages_delivered, "received delivery error '{e}', exiting delivery waiting");
                                 if error.is_none() {
                                     error = Some(Error::from(e))
                                 }
@@ -557,14 +569,13 @@ pub async fn forward(
                                 bytes_count += data_len as u128;
                                 messages_delivered += 1;
                                 trace!(messages_received, messages_delivered, "JSON line delivered");
-                                if messages_delivered == messages_received && newline_stream_done {
-                                    delivered_rx.close();
-                                    // close the receiver so that recv() returns None, disabling this select branch
-                                }
                             }
                         }
                     }
-                    else => break,
+                    else => {
+                        trace!(messages_received, messages_delivered, "no more deliveries to wait from, exiting delivery waiting");
+                        break
+                    },
                 };
             }
         }

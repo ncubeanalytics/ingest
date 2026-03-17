@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     let config = Config::load()?;
     debug!("Config: {:?}", config);
 
-    let _guard = common::logging::init(
+    let _sentry_guard = common::logging::init_sentry(
         config.logging.clone(),
         ingest::PKG_NAME,
         ingest::PKG_VERSION,
@@ -21,6 +21,12 @@ fn main() -> Result<()> {
 }
 
 async fn run(config: Config) -> Result<()> {
+    let _guard = common::logging::init(
+        config.logging.clone(),
+        ingest::PKG_NAME,
+        ingest::PKG_VERSION,
+    )?;
+
     info!("Starting server...");
     let server = Server::start(config).await?;
     info!("Server started");

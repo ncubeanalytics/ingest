@@ -416,7 +416,7 @@ def main():
     if needs_ingest:
         parsed_ingest_url = urlparse(args.ingest_service_url)
         wait_for_service(parsed_ingest_url.hostname, parsed_ingest_url.port)
-        url = args.ingest_service_url + "/" + args.ingest_service_schema_id
+        url = args.ingest_service_url + "/ingest/" + args.ingest_service_schema_id
     results = []
     for impl in args.impl:
         if impl == "ingest-plain":

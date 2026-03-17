@@ -6,9 +6,10 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use async_stream::stream;
 use bytes::Bytes;
 use futures::{Stream, pin_mut};
-use tracing::{Instrument, instrument, trace};
+use tracing::{instrument, trace};
 
 use futures::stream::StreamExt;
+use rdkafka::error::KafkaError;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
@@ -16,7 +17,6 @@ use tokio_util::io::StreamReader;
 
 use crate::config::{ContentType, HeaderNames, SchemaConfig};
 use crate::error::{Error, Result};
-use crate::event::forward_message_to_kafka;
 use crate::kafka::Kafka;
 use crate::python::{ProcessorResponse, call_processor_process, call_processor_process_head};
 use crate::server::{PythonProcessor, ServerState};
@@ -417,19 +417,23 @@ pub async fn forward(
                 body.freeze()
             };
             bytes_count = body.len() as u128;
-            match forward_message_to_kafka(
-                body,
-                headers,
-                kafka,
+
+            let (delivered_tx, mut delivered_rx) = mpsc::channel(512);
+            send_to_kafka(
+                &body,
+                &headers,
+                &kafka,
                 &schema_config.destination_topic,
                 &schema_config.librdkafka_config,
+                delivered_tx,
             )
-            .await
-            {
+            .await;
+
+            match delivered_rx.recv().await.unwrap() {
                 Err(e) => {
                     return IngestResponse {
-                        ingested_count: messages_delivered,
-                        ingested_bytes: bytes_count,
+                        ingested_count: 0,
+                        ingested_bytes: 0,
                         ingested_content_type: content_type,
                         ingested_schema_id: schema_id.to_owned(),
                         error: Some(Error::from(e)),
@@ -464,6 +468,13 @@ pub async fn forward(
             let mut newline_stream_done = false;
 
             loop {
+                // 2 select branches
+                // 1. listens to newlines arriving from the stream and send it to kafka without
+                // waiting for delivery. kafka delivery callback will put the result in the delivery
+                // channel
+                // 2. listens to the delivery channel
+                // once listening to new lines is done or has an error, and no more deliveries are
+                // pending, the loop exits and the response can be sent
                 tokio::select! {
                     line_opt = newline_stream.next(), if !newline_stream_done => {
                         if let Some(line) = line_opt {
@@ -493,52 +504,15 @@ pub async fn forward(
                                         messages_received += 1;
                                         trace!(messages_received, messages_delivered, "JSON received");
                                         tracing::Span::current().record("message_count", messages_received);
-
-                                        {
-                                            // XXX: should not have to do all this copying
-                                            // kafka produce should happen in the same task, we should
-                                            // only listen for deliveries possibly somewhere else
-                                            // should probably create a producer version that
-                                            // returns a stream of deliveries
-                                            // and listen to that stream of deliveries
-                                            // only problem is how to deal with queue full
-                                            // if we make send async just to deal with it?
-                                            // should the queue waiting be behind a global lock so
-                                            // that re-enqueues happen in order?
-                                            // should each thread receive a position in the waiting
-                                            // queue so that when the queue is freed, re-sends
-                                            // happen in order
-                                            // also on the delivery stream. the same producer may
-                                            // have several delivery streams? or just one at any time?
-                                            // API could be you turn it on, then all delivery callbacks
-                                            // put results in some queue?
-                                            // and a stream reads that queue
-                                            // does a channel work for this?
-                                            // then you turn it off?
-                                            // what if producer is used by many concurrent tasks,
-                                            // each task wants its own delivery stream
-                                            // so we need to pass some state to the producer send
-                                            // so that it knows where to put the delivery
-                                            let headers = headers.clone();
-                                            let kafka = kafka.clone();
-                                            let data = Bytes::from(data.as_bytes().to_vec());
-                                            let destination_topic = schema_config.destination_topic.to_owned();
-                                            let librdkafka_config = schema_config.librdkafka_config.to_owned();
-                                            // the sender option here will never be None, because
-                                            // when we set it to None we also disable this select
-                                            // branch
-                                            let delivered_tx = delivered_tx.as_ref().cloned().unwrap();
-                                            tokio::spawn(async move {
-                                                // XXX: limit spawns up to a number
-                                                // https://users.rust-lang.org/t/tokio-number-of-concurrent-tasks/40450
-                                                // https://github.com/tokio-rs/tokio/discussions/2648
-                                                // https://users.rust-lang.org/t/limited-concurrency-for-future-execution-tokio/87171
-                                                let res =
-                                                    forward_message_to_kafka(data, headers, kafka, &destination_topic, &librdkafka_config)
-                                                        .await;
-                                                let _ = delivered_tx.send(res).await;
-                                            }.in_current_span());
-                                        }
+                                        let delivered_tx = delivered_tx.as_ref().cloned().unwrap();
+                                        send_to_kafka(
+                                            data.as_ref(),
+                                            &headers,
+                                            &kafka,
+                                            schema_config.destination_topic.as_str(),
+                                            schema_config.librdkafka_config.as_str(),
+                                            delivered_tx
+                                        ).await;
                                     }
                                 }
                             }
@@ -554,24 +528,26 @@ pub async fn forward(
                     Some(res) = delivered_rx.recv() => {
                         match res {
                             Err(e) => {
-                                // on delivery error, set the error (but don't overwrite an error
-                                // already set by a request stream error), and stop waiting for any
-                                // further deliveries
-                                trace!(messages_received, messages_delivered, "received delivery error '{e}', exiting delivery waiting");
+                                // when a message fails to be delivered, we need to return its error
+                                // since we cannot close the connection, we must wait for the client
+                                // to close it. so accumulate all the errors and return them with
+                                // the response. TODO, for now return the first delivery error only
+                                trace!(messages_received, messages_delivered, "JSON line kafka delivery error '{e}'");
+                                // don't overwrite an error already set by a request stream error or
+                                // by an earlier delivery error
                                 if error.is_none() {
                                     error = Some(Error::from(e))
                                 }
-                                delivered_rx.close();
                             },
                             Ok(data_len) => {
                                 bytes_count += data_len as u128;
                                 messages_delivered += 1;
-                                trace!(messages_received, messages_delivered, "JSON line delivered");
+                                trace!(messages_received, messages_delivered, "JSON line delivered to kafka");
                             }
                         }
                     }
                     else => {
-                        trace!(messages_received, messages_delivered, "no more deliveries to wait from, exiting delivery waiting");
+                        trace!(messages_received, messages_delivered, "no more JSON lines or kafka deliveries to wait from, returning response");
                         break
                     },
                 };
@@ -584,5 +560,20 @@ pub async fn forward(
         ingested_content_type: content_type,
         ingested_schema_id: schema_id.to_owned(),
         error,
+    }
+}
+
+pub async fn send_to_kafka(
+    data: &[u8],
+    headers: &[(String, Bytes)],
+    kafka: &Kafka,
+    topic: &str,
+    producer_name: &str,
+    delivery_tx: mpsc::Sender<std::result::Result<usize, KafkaError>>,
+) {
+    if let Err(e) = kafka.send(data, headers, topic, producer_name, delivery_tx.clone())
+        && delivery_tx.send(Err(e)).await.is_err()
+    {
+        panic!("Could not send delivery result, the delivery result channel has been closed")
     }
 }

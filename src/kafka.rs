@@ -1,24 +1,44 @@
 //! Kafka producer wrapper.
 
+use bytes::Bytes;
+use common::config::ConfigError;
+use rdkafka::error::KafkaError;
+use rdkafka::message::{DeliveryResult, Header, OwnedHeaders};
+use rdkafka::producer::{BaseRecord, ProducerContext, ThreadedProducer};
+use rdkafka::{ClientConfig, ClientContext, producer::Producer, util::Timeout};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-
-use bytes::Bytes;
-use common::config::ConfigError;
-use futures::future::join_all;
-use futures::TryFutureExt;
-use rdkafka::error::KafkaError;
-use rdkafka::message::{Header, OwnedHeaders};
-use rdkafka::{
-    producer::{FutureProducer, FutureRecord, Producer},
-    util::Timeout,
-    ClientConfig,
-};
+use std::time::Duration;
+use tokio::sync::mpsc;
 use tracing::{error, instrument, trace};
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+
+struct ProducerCtx;
+
+impl ClientContext for ProducerCtx {}
+
+impl ProducerContext for ProducerCtx {
+    type DeliveryOpaque = Box<mpsc::Sender<std::result::Result<usize, KafkaError>>>;
+
+    fn delivery(
+        &self,
+        delivery_result: &DeliveryResult<'_>,
+        delivery_opaque: Self::DeliveryOpaque,
+    ) {
+        let delivery_message = match delivery_result {
+            Ok(msg) => Ok(msg.payload_len()),
+            Err(e) => Err(e.0.clone()),
+        };
+        if delivery_opaque.blocking_send(delivery_message).is_err() {
+            panic!("Could not send delivery result, the delivery result channel has been closed")
+        }
+    }
+}
+
+type KafkaProducer = ThreadedProducer<ProducerCtx>;
 
 /// Kafka producer wrapper.
 /// Can be cheaply cloned.
@@ -26,12 +46,12 @@ use crate::error::{Error, Result};
 pub struct Kafka(Arc<KafkaInner>);
 
 pub struct KafkaInner {
-    producers: HashMap<String, FutureProducer>,
+    producers: HashMap<String, KafkaProducer>,
 }
 
 impl Kafka {
     pub fn start(config: &Config) -> Result<Kafka> {
-        let mut producers: HashMap<String, FutureProducer> = HashMap::new();
+        let mut producers: HashMap<String, KafkaProducer> = HashMap::new();
         for librdkafka_config in &config.librdkafka {
             let mut producer_config = ClientConfig::new();
 
@@ -44,8 +64,11 @@ impl Kafka {
                 producer_config.set(key, value);
             }
 
-            let producer = producer_config.create()?;
-            if producers.insert(librdkafka_config.name.to_owned(), producer).is_some() {
+            let producer = producer_config.create_with_context(ProducerCtx {})?;
+            if producers
+                .insert(librdkafka_config.name.to_owned(), producer)
+                .is_some()
+            {
                 return Err(Error::from(ConfigError::Invalid(format!(
                     "Librdkafka configuration with name '{}' specified more than once",
                     librdkafka_config.name
@@ -56,7 +79,7 @@ impl Kafka {
         Ok(Self(Arc::new(KafkaInner { producers })))
     }
 
-    fn get_producer(&self, name: &str) -> &FutureProducer {
+    fn get_producer(&self, name: &str) -> &KafkaProducer {
         &self.0.producers[name]
     }
 
@@ -73,21 +96,25 @@ impl Kafka {
         name = "send_kafka_message",
         skip(self, data, headers)
     )]
-    pub async fn send(
+    pub fn send(
         &self,
-        data: Bytes,
-        headers: Vec<(String, Bytes)>,
+        data: &[u8],
+        headers: &[(String, Bytes)],
         topic: &str,
         producer_name: &str,
+        delivery_tx: mpsc::Sender<std::result::Result<usize, KafkaError>>,
     ) -> std::result::Result<(), KafkaError> {
         let mut kafka_headers = OwnedHeaders::new_with_capacity(headers.len());
         for (key, val) in headers {
             kafka_headers = kafka_headers.insert(Header {
-                key: &key,
+                key,
                 value: Some(val.as_ref()),
             });
         }
-        let record = FutureRecord::to(topic)
+
+        let record = BaseRecord::with_opaque_to(topic, Box::new(delivery_tx))
+            .payload(data)
+            .headers(kafka_headers)
             .key("")
             // an empty key with partitioner:consistent_random will randomly distribute across
             // the partitions
@@ -100,45 +127,12 @@ impl Kafka {
             // 5. should not employ partitioning in actix web workers. (cannot. they are given some
             // kind of connection object before the data is even read). but in general should not
             // if a client is spamming requests for the same partition, client should switch to streaming
-            .payload(data.as_ref())
-            .headers(kafka_headers);
+            ;
 
         self.get_producer(producer_name)
-            .send(record, Timeout::Never)
-            .map_err(|(error, _)| error)
-            .map_ok(|_| {
-                trace!(topic, "Message successfully sent to kafka broker");
-            })
-            .await
-    }
-
-    #[allow(dead_code)]
-    pub async fn send_many(
-        &self,
-        data: Vec<Bytes>,
-        headers: Vec<(String, Bytes)>,
-        topic: &str,
-        producer_name: &str,
-    ) -> std::result::Result<(), KafkaError> {
-        let mut futures = Vec::with_capacity(data.len());
-
-        // sending events in order can be configured,
-        // although it appears a bit problematic (see message timeouts)
-        // https://github.com/edenhill/librdkafka/blob/master/INTRODUCTION.md#reordering
-        // https://stackoverflow.com/a/53379022/2440380
-
-        // XXX: this does not guarantee sending in order due to internal retries of
-        // FutureProducer.send() in cases where the local queue is full. need to fix this so that
-        // such retries happen while taking order into account
-        // https://github.com/fede1024/rust-rdkafka/issues/468
-        for d in data {
-            futures.push(self.send(d, headers.clone(), topic, producer_name))
-        }
-
-        join_all(futures) // XXX: does join_all execute in order?
-            .await
-            .into_iter()
-            .collect::<std::result::Result<Vec<()>, KafkaError>>()?;
+            .send(record)
+            .map_err(|(error, _)| error)?;
+        trace!(topic, "Message successfully sent to kafka broker");
         Ok(())
     }
 
@@ -146,8 +140,7 @@ impl Kafka {
         trace!("Flushing kafka producers");
 
         for (name, producer) in self.0.producers.iter() {
-            // XXX: should add some timeout
-            if let Err(e) = producer.flush(Timeout::Never) {
+            if let Err(e) = producer.flush(Timeout::After(Duration::from_secs(30))) {
                 error!("Flushing kafka producer '{}' failed with error {}", name, e);
             }
         }

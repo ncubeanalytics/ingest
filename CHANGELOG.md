@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 - unreleased
+
+### Changed
+
+* Don't log otel below info level by default in application logs
+
 ## 0.13.0 - 2026-03-17
 
 ### Fixed

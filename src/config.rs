@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use common::config::CommonConfig;
 use common::logging::{LoggingConfig, LoggingDefaults};
 use serde::{Deserialize, Serialize};
-use vec1::{vec1, Vec1};
+use vec1::{Vec1, vec1};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
@@ -142,7 +142,7 @@ pub struct LibrdkafkaConfig {
 #[derive(Debug, Clone)]
 pub struct ServiceLoggingDefaults;
 impl LoggingDefaults for ServiceLoggingDefaults {
-    const LOG_LEVEL: &'static str = "debug,h2=info,tower=info,hyper=info,tonic=info,want=debug,rdkafka=debug,tokio_postgres=info,reqwest=info";
+    const LOG_LEVEL: &'static str = "debug,h2=info,tower=info,hyper=info,tonic=info,want=debug,rdkafka=debug,tokio_postgres=info,reqwest=info,opentelemetry=info";
 }
 
 #[derive(Clone, Debug, Deserialize)]
